@@ -191,8 +191,8 @@ async def on_message(message):
               await channel.send(f'<@716390085896962058> h')
             if 'human' in content:
                     spam.cancel()
-                    channel = client.get_channel(1086389152771211286)
-                    await channel.send(f'<@{report_id}> Reboot')
+                    channel = client.get_channel(1166222868200308827)
+                    await channel.send(f'<@everyone> verify please')
                     print('Captcha detected; autocatcher paused. Resume Manually, after solving captcha manually.')
     if not message.author.bot:
          await client.process_commands(message)
