@@ -175,27 +175,7 @@ async def on_message(message):
                             if len(new_category.channels) <= 48:
                              await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
                        await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
-                      if not solution:
-                       solution = solve(content, 'pokemon')
-                       if solution:
-                        await asyncio.sleep(2)
-                        await channel.send(f'<@716390085896962058> c {solution[0]}')
-                        await asyncio.sleep(2)
-            if 'unusual' in content:
-              channel = client.get_channel(1079948600936763443)
-              await channel.send(f'<@716390085896962058> i l')
-            if 'Congratulations' in content:
-              await asyncio.sleep(2)
-            if 'wrong pokémon!' in content:
-              await asyncio.sleep(8)
-              await channel.send(f'<@716390085896962058> h')
-            if 'human' in content:
-                    spam.cancel()
-                    channel = client.get_channel(1166222868200308827)
-                    await channel.send(f'<@everyone> Find the Link or else')
-                    print('Captcha detected; autocatcher paused. Resume Manually, after solving captcha manually.')
-    if not message.author.bot:
-         await client.process_commands(message)
+                      
             
 @client.command()
 async def report(ctx, *, args):
