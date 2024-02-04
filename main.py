@@ -5,7 +5,6 @@ version = 'v2.7'
 
 user_token = os.environ['user_token']
 spam_id = os.environ['spam_id']
-report_id = os.environ['report_id']
 
 with open('pokemon','r', encoding='utf8') as file:
     pokemon_list = file.read()
