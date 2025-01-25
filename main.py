@@ -1,6 +1,7 @@
 import os
 import asyncio
 import random
+from discord import Intents
 from discord.ext import commands, tasks
 
 version = 'v2.7'
@@ -14,7 +15,19 @@ with open('mythical', 'r', encoding='utf8') as file:
     mythical_list = file.read().splitlines()
 
 poketwo = 716390085896962058
-client = commands.Bot(command_prefix='Lickitysplit')
+
+# Enable intents, including Message Content Intent
+intents = Intents.default()
+intents.message_content = True
+client = commands.Bot(command_prefix='Lickitysplit', intents=intents)
+
+# Helper function for debugging
+async def log_debug_info(message):
+    print(f"Message from {message.author}: {message.content}")
+    if message.embeds:
+        print(f"Embed found: {message.embeds[0].title}")
+    if message.channel.category:
+        print(f"Channel Category: {message.channel.category.name}")
 
 # Helper function for channel management
 async def manage_channel(channel, category_name, solution):
@@ -30,10 +43,15 @@ async def manage_channel(channel, category_name, solution):
 
 @client.event
 async def on_message(message):
+    # Debugging information
+    await log_debug_info(message)
+
     if message.author.id == poketwo and message.channel.category and message.channel.category.name == 'catch':
-        if message.embeds and 'wild pokémon has appeared!' in message.embeds[0].title:
-            await asyncio.sleep(1)
-            await message.channel.send('<@716390085896962058> h')
+        if message.embeds:
+            embed = message.embeds[0]  # Get the first embed
+            if 'wild pokémon has appeared!' in embed.title.lower():
+                await asyncio.sleep(1)
+                await message.channel.send('<@716390085896962058> h')
         elif 'The pokémon is ' in message.content:
             solution = message.content.split('The pokémon is ')[1].strip()
             if solution:
@@ -44,6 +62,8 @@ async def on_message(message):
                         break
                 else:
                     print("No available category for 'Friends Col'.")
+    # Ensure commands are processed
+    await client.process_commands(message)
 
 # Spam task
 @tasks.loop(seconds=5)
