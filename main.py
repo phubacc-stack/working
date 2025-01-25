@@ -88,6 +88,9 @@ async def on_message(message):
                     if len(new_category.channels) <= 48:
                         await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
 
+        # Send redirect command
+        await channel.send('<@716390085896962058> redirect 1 2 3 4 5 6')
+
 # Task that sends a random spam message at intervals
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
@@ -127,4 +130,4 @@ async def main():
 # Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
-        
+    
