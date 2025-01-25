@@ -20,6 +20,22 @@ poketwo = 716390085896962058
 client = commands.Bot(command_prefix='Lickitysplit')
 intervals = [2.2, 2.4, 2.6, 2.8]
 
+def solve(message, file_name):
+    hint = []
+    for i in range(15,len(message) - 1):
+        if message[i] != '\\':
+            hint.append(message[i])
+    hint_string = ''
+    for i in hint:
+        hint_string += i
+    hint_replaced = hint_string.replace('_', '.')
+    with open(f"{file_name}", "r") as f:
+        solutions = f.read()
+    solution = re.findall('^'+hint_replaced+'$', solutions, re.MULTILINE)
+    if len(solution) == 0:
+        return None
+    return solution
+
 @client.event
 async def on_message(message):
     channel = client.get_channel(message.channel.id)
