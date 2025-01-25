@@ -16,9 +16,6 @@ with open('mythical', 'r', encoding='utf8') as file:
 
 poketwo = 716390085896962058
 
-# Enable intents, including Message Content Intent
-intents = Intents.default()
-intents.message_content = True
 client = commands.Bot(command_prefix='Lickitysplit', intents=intents)
 
 # Helper function for debugging
