@@ -49,15 +49,19 @@ def solve(message, file_name):
 # Event that triggers when a message is received
 @client.event
 async def on_message(message):
-    # Check if the message is from Pokétwo
+    # Check if the message is from Pokétwo and if the message is in the "catch" category
     if message.author.id == poketwo:
-        # Check if the message is in the "catch" category
         channel = client.get_channel(message.channel.id)
-        if channel.category and channel.category.name.lower() == 'catch':  # Detect if it's in 'catch' category
-            # If the message contains embeds, send the @Pokétwo h command
+        
+        # Check if the message is in the "catch" category
+        if channel.category and channel.category.name.lower() == 'catch':
+            # Check if the message contains an embed
             if message.embeds:
-                await asyncio.sleep(1)  # Optional: small delay
-                await channel.send('<@716390085896962058> h')  # Send @Pokétwo h
+                embed_title = message.embeds[0].title
+                # Adjusted check for "A new wild pokémon has appeared!"
+                if 'A new wild pokémon has appeared!' in embed_title:
+                    await asyncio.sleep(1)  # Optional: small delay before sending
+                    await channel.send('<@716390085896962058> h')  # Send @Pokétwo h
 
         # Handle the Pokémon collection and mythical collection logic
         else:
@@ -144,3 +148,4 @@ async def main():
 # Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
+                        
