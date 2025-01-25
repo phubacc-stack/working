@@ -24,7 +24,6 @@ intervals = [2.2, 2.4, 2.6, 2.8]
 
 # Function to solve Pokémon name from a hint
 def solve(message, file_name):
-    # Extract the hint from the message (start from index 15 to skip the initial part of the string)
     hint = []
     for i in range(15, len(message) - 1):
         if message[i] != '\\':  # Only add characters that aren't backslashes
@@ -56,9 +55,15 @@ def solve(message, file_name):
     # Return the matched solutions
     return matches
 
+# Event that triggers when the bot is ready
+@client.event
+async def on_ready():
+    print(f'Logged into account: {client.user.name}')  # Debugging: Check if bot logs in successfully
+
 # Event that triggers when a message is received
 @client.event
 async def on_message(message):
+    print(f"Received message: {message.content}")  # Debugging: Check if message is being received
     # Check if the message is from Pokétwo and if the message is in the "catch" category
     if message.author.id == poketwo:
         channel = client.get_channel(message.channel.id)
@@ -68,10 +73,13 @@ async def on_message(message):
             # Check if the message contains an embed
             if message.embeds:
                 embed_title = message.embeds[0].title
+                print(f"Embed title: {embed_title}")  # Debugging: Check the embed title
+                
                 # Adjusted check for "A new wild pokémon has appeared!"
                 if 'A new wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)  # Optional: small delay before sending
                     await channel.send('<@716390085896962058> h')  # Send @Pokétwo h
+                    print(f"Sent @Pokétwo h in channel {channel.name}")  # Debugging: Check if message is sent
 
         # Handle the Pokémon collection and mythical collection logic
         else:
@@ -124,4 +132,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+                        
