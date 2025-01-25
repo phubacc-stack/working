@@ -41,7 +41,8 @@ async def on_message(message):
             # Check if message contains Pokemon embed
             if message.embeds:
                 embed_title = message.embeds[0].title
-                if 'wild pokémon has appeared!' in embed_title:
+                # Check if the embed title contains 'A new wild pokémon has appeared!'
+                if 'A new wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)
                     # Sending @Pokétwo#8236 h to trigger the Pokémon response
                     await channel.send('<@716390085896962058> h')
