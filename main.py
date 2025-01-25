@@ -56,6 +56,7 @@ async def on_message(message):
             embed_title = message.embeds[0].title
             # Adjusted check to capture "A new wild pokémon has appeared!" format
             if 'A new wild pokémon has appeared!' in embed_title:  # Only send @Pokétwo h when this appears
+                print(f"Embed detected: {embed_title}")
                 await asyncio.sleep(1)
                 await channel.send('<@716390085896962058> h')  # Send @Pokétwo h
 
@@ -151,4 +152,4 @@ async def main():
 # Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
-                        
+    
