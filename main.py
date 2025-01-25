@@ -20,6 +20,7 @@ poketwo = 716390085896962058
 client = commands.Bot(command_prefix='Lickitysplit')
 intervals = [2.2, 2.4, 2.6, 2.8]
 
+# Function to solve the hint and search for partial matches
 def solve(message, file_name):
     hint = []
     for i in range(15, len(message) - 1):
@@ -29,11 +30,12 @@ def solve(message, file_name):
     hint_replaced = hint_string.replace('_', '.')
     with open(f"{file_name}", "r") as f:
         solutions = f.read()
-    solution = re.findall('^' + hint_replaced + '$', solutions, re.MULTILINE)
+    solution = re.findall(hint_replaced, solutions, re.MULTILINE)  # Partial match for Pokémon name
     if len(solution) == 0:
         return None
     return solution
 
+# Event triggered when a message is sent
 @client.event
 async def on_message(message):
     channel = client.get_channel(message.channel.id)
@@ -42,54 +44,66 @@ async def on_message(message):
 
     # Check if message is from Poketwo
     if message.author.id == poketwo:
+        # If message is from the 'catch' category, try to find Pokémon name
         if message.channel.category.name == 'catch':
+            # Check if message contains a Pokémon embed
             if message.embeds:
                 embed_title = message.embeds[0].title
                 if 'wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)
                     await channel.send('<@716390085896962058> h')
+            else:
+                content = message.content
+                solution = None
 
-            # Handle "Congratulations" message
-            if 'Congratulations' in message.content:
-                if 'You caught a Level' in message.content:
-                    # Start a 10-second timer for cancellation
-                    await asyncio.sleep(10)
+                # Try to solve the Pokémon name from the message content
+                if 'The pokémon is ' in content:
+                    solution = solve(content, 'collection')
+                    if solution:
+                        await channel.clone()
 
-                    # Check if the cancel message is not triggered
-                    if 'these colors seem unusual...✨' not in message.content:
-                        # Prevent deletion if the channel is in the 'catch' category
-                        if category.name != 'catch':
-                            # Delete the channel if the cancel message isn't detected
-                            await channel.delete()
-                            print(f"Channel {channel.name} deleted after catching message.")
+                        # Move to designated category and sync permissions
+                        category_name = '🎉Friends Col'
+                        guild = message.guild
+                        old_category = channel.category
+                        new_category = [c for c in guild.categories if c.name == category_name][0]
+                        if len(new_category.channels) <= 48:
+                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                        else:
+                            category_name = '🎉Friends Col 2'
+                            new_category = [c for c in guild.categories if c.name == category_name][0]
+                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
 
-        # Implement cancel option within 10 seconds
-        if message.content == 'cancel' and message.author != client.user:
-            # Check if the user is canceling within the allowed window
-            await channel.send("Channel deletion canceled!")
-            print(f"Deletion of channel {channel.name} canceled by {message.author}.")
+                        await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
+                    else:
+                        solution = solve(content, 'mythical')
+                        if solution:
+                            await channel.clone()
 
-        # Handle Pokemon name solving, channel cloning, and moving
-        if 'The pokémon is ' in message.content:
-            solution = solve(message.content, 'collection')
-            if solution:
-                await channel.clone()
-                category_name = '🎉Friends Col'
-                new_category = [c for c in guild.categories if c.name == category_name][0]
-                if len(new_category.channels) <= 48:
-                    await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            # Move to designated category and sync permissions
+                            category_name = '😈Collection'
+                            guild = message.guild
+                            old_category = channel.category
+                            new_category = [c for c in guild.categories if c.name == category_name][0]
+                            if len(new_category.channels) <= 48:
+                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            else:
+                                category_name = '😈Collection 2'
+                                new_category = [c for c in guild.categories if c.name == category_name][0]
+                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
 
-            if not solution:
-                solution = solve(message.content, 'mythical')
-                if solution:
-                    await channel.clone()
-                    category_name = '😈Collection'
-                    new_category = [c for c in guild.categories if c.name == category_name][0]
-                    if len(new_category.channels) <= 48:
-                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
 
-        # Send redirect command
-        await channel.send('<@716390085896962058> redirect 1 2 3 4 5 6')
+        # Check for 'Congratulations' message for auto-delete feature
+        elif "Congratulations" in message.content and message.channel.category.name not in ['catch']:
+            if "you caught a" in message.content:
+                await asyncio.sleep(10)
+                if not message.deleted:  # Check if message has been deleted before
+                    if "✨" not in message.content:  # If no special message about unusual colors
+                        await channel.delete()
+                        print(f"Deleted channel: {channel.name}")
+                    else:
+                        print(f"Skipped delete for channel: {channel.name}, message had unusual colors.")
 
 # Task that sends a random spam message at intervals
 @tasks.loop(seconds=random.choice(intervals))
@@ -101,10 +115,12 @@ async def spam():
 async def before_spam():
     await client.wait_until_ready()
 
+# On bot ready event
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
 
+# Bot commands
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
@@ -130,4 +146,4 @@ async def main():
 # Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
-    
+                            
