@@ -24,26 +24,36 @@ intervals = [2.2, 2.4, 2.6, 2.8]
 
 # Function to solve Pokémon name from a hint
 def solve(message, file_name):
+    # Extract the hint from the message (start from index 15 to skip the initial part of the string)
     hint = []
     for i in range(15, len(message) - 1):
-        if message[i] != '\\':
+        if message[i] != '\\':  # Only add characters that aren't backslashes
             hint.append(message[i])
-    hint_string = ''.join(hint)
     
-    # Convert underscores (_) to a dot (.) and escape regex special characters
+    hint_string = ''.join(hint)  # Create the full hint string
+    print(f"Extracted hint: {hint_string}")  # Debugging: Check the extracted hint
+    
+    # Replace underscores (_) with dots (.) to match any character in regex
     hint_replaced = hint_string.replace('_', r'\.')  # Replace _ with escaped dot \.
+    print(f"Hint for regex match: {hint_replaced}")  # Debugging: Check the regex pattern
     
-    # Ensure regex doesn't interpret it as a wildcard
-    hint_length = len(hint_string)
+    hint_length = len(hint_string)  # Get the length of the hint string
     
+    # Read the file with Pokémon names
     with open(f"{file_name}", "r") as f:
         solutions = f.read().splitlines()
-
+    
+    # Debugging: Check all Pokémon names in the file
+    print(f"Total Pokémon in {file_name}: {len(solutions)}")  # Debugging: Show number of Pokémon
+    
     # Using fullmatch to only match the exact length and pattern
     matches = [solution for solution in solutions if re.fullmatch(hint_replaced, solution) and len(solution) == hint_length]
-
+    
     if len(matches) == 0:
+        print(f"No matches found for hint: {hint_string}")  # Debugging: No matches found
         return None
+    
+    # Return the matched solutions
     return matches
 
 # Event that triggers when a message is received
@@ -107,45 +117,11 @@ async def on_message(message):
                             await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
                         await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
 
-# Task that sends a random spam message at intervals
-@tasks.loop(seconds=random.choice(intervals))
-async def spam():
-    channel = client.get_channel(int(spam_id))
-    await channel.send(''.join(random.sample('1234567890', 7) * 5))
-
-@spam.before_loop
-async def before_spam():
-    await client.wait_until_ready()
-
-# On bot ready event
-@client.event
-async def on_ready():
-    print(f'Logged into account: {client.user.name}')
-
-# Bot commands
-@client.command()
-async def report(ctx, *, args):
-    await ctx.send(args)
-
-@client.command()
-async def reboot(ctx):
-    if not spam.is_running():
-        spam.start()
-    await ctx.send("Spam task has been restarted!")
-
-@client.command()
-async def pause(ctx):
-    if spam.is_running():
-        spam.cancel()
-    await ctx.send("Spam task has been paused!")
-
-# Main function to run the bot
+# Run the bot
 async def main():
     async with client:
-        spam.start()  # Start the spam task
         await client.start(user_token)
 
-# Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
-                        
+    
