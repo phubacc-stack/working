@@ -43,6 +43,7 @@ async def on_message(message):
                 embed_title = message.embeds[0].title
                 if 'wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)
+                    # Sending @Pokétwo#8236 h to trigger the Pokémon response
                     await channel.send('<@716390085896962058> h')
             else:
                 content = message.content
@@ -125,3 +126,4 @@ async def main():
 # Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
+    
