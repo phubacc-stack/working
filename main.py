@@ -11,6 +11,11 @@ with open('pokemon', 'r', encoding='utf8') as file:
 with open('mythical', 'r') as file:
     mythical_list = file.read()
 
+num_pokemon = 0
+shiny = 0
+legendary = 0
+mythical = 0
+
 poketwo = 716390085896962058
 client = commands.Bot(command_prefix='Lickitysplit')
 intervals = [2.2, 2.4, 2.6, 2.8]
@@ -35,17 +40,20 @@ async def on_message(message):
     guild = message.guild
     category = channel.category
 
-    # Check if message is from Poketwo
+    # Check if the message author is @Pokétwo
     if message.author.id == poketwo:
         if message.channel.category.name == 'catch':
-            # Check if message contains Pokemon embed
+            # Check if the message contains an embed
             if message.embeds:
                 embed_title = message.embeds[0].title
-                # Check if the embed title contains 'A new wild pokémon has appeared!'
-                if 'A new wild pokémon has appeared!' in embed_title:
+                print(f"Embed title: {embed_title}")  # Debug log to check the embed title
+                
+                # Check if the embed title contains 'A new wild pokémon has appeared!' or similar
+                if 'A new wild pokémon has appeared!' in embed_title or 'fled. A new wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)
-                    # Sending @Pokétwo#8236 h to trigger the Pokémon response
+                    # Send @Pokétwo#8236 h to trigger the Pokémon response
                     await channel.send('<@716390085896962058> h')
+
             else:
                 content = message.content
                 solution = None
@@ -94,12 +102,6 @@ async def before_spam():
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-
-# Handles incoming messages
-@client.event
-async def on_message(message):
-    # Your on_message logic remains unchanged
-    pass
 
 # Bot commands
 @client.command()
