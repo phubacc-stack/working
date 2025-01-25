@@ -63,28 +63,36 @@ async def on_message(message):
                     solution = solve(content, 'collection')
                     if solution:
                         # Clone the channel
-                        new_channel = await channel.clone(name=solution[0].lower().replace(' ', '-'))
+                        new_channel = await channel.clone(name=channel.name)  # Clone with the same name
                         print(f"Cloned channel: {new_channel.name}")
+                        
+                        # Rename the original channel to the Pokémon name
+                        await channel.edit(name=solution[0].lower().replace(' ', '-'))
+                        print(f"Renamed original channel to: {channel.name}")
                         
                         # Move the original channel to the appropriate category
                         category_name = '🎉Friends Col'
                         guild = message.guild
                         new_category = [c for c in guild.categories if c.name == category_name][0]
-                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                        await channel.edit(category=new_category, sync_permissions=True)
                         print(f"Moved original channel {channel.name} to category {new_category.name}")
                         await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
                     if not solution:
                         solution = solve(content, 'mythical')
                         if solution:
                             # Clone the channel
-                            new_channel = await channel.clone(name=solution[0].lower().replace(' ', '-'))
+                            new_channel = await channel.clone(name=channel.name)  # Clone with the same name
                             print(f"Cloned channel: {new_channel.name}")
+                            
+                            # Rename the original channel to the Pokémon name
+                            await channel.edit(name=solution[0].lower().replace(' ', '-'))
+                            print(f"Renamed original channel to: {channel.name}")
                             
                             # Move the original channel to the appropriate category
                             category_name = '😈Collection'
                             guild = message.guild
                             new_category = [c for c in guild.categories if c.name == category_name][0]
-                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            await channel.edit(category=new_category, sync_permissions=True)
                             print(f"Moved original channel {channel.name} to category {new_category.name}")
                             await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
 
