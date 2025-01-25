@@ -1,16 +1,18 @@
 import re, os, asyncio, random
 from discord.ext import commands, tasks
 
+# Bot version and settings
 version = 'v2.7'
-
 user_token = os.environ['user_token']
 spam_id = os.environ['spam_id']
 
+# Load the Pokémon and Mythical lists
 with open('pokemon', 'r', encoding='utf8') as file:
     pokemon_list = file.read()
 with open('mythical', 'r') as file:
     mythical_list = file.read()
 
+# Initialize counters
 num_pokemon = 0
 shiny = 0
 legendary = 0
@@ -20,6 +22,7 @@ poketwo = 716390085896962058
 client = commands.Bot(command_prefix='Lickitysplit')
 intervals = [2.2, 2.4, 2.6, 2.8]
 
+# Function to solve Pokémon name from a hint
 def solve(message, file_name):
     hint = []
     for i in range(15, len(message) - 1):
@@ -43,23 +46,20 @@ def solve(message, file_name):
         return None
     return matches
 
+# Event that triggers when a message is received
 @client.event
 async def on_message(message):
-    channel = client.get_channel(message.channel.id)
-    guild = message.guild
-    category = channel.category
-    
-    # Check if message is from Pokétwo
+    # Check if the message is from Pokétwo
     if message.author.id == poketwo:
-        # Check if message contains Pokémon embed
-        if message.embeds:
-            embed_title = message.embeds[0].title
-            # Adjusted check to capture "A new wild pokémon has appeared!" format
-            if 'A new wild pokémon has appeared!' in embed_title:  # Only send @Pokétwo h when this appears
-                print(f"Embed detected: {embed_title}")
-                await asyncio.sleep(1)
+        # Check if the message is in the "catch" category
+        channel = client.get_channel(message.channel.id)
+        if channel.category and channel.category.name.lower() == 'catch':  # Detect if it's in 'catch' category
+            # If the message contains embeds, send the @Pokétwo h command
+            if message.embeds:
+                await asyncio.sleep(1)  # Optional: small delay
                 await channel.send('<@716390085896962058> h')  # Send @Pokétwo h
 
+        # Handle the Pokémon collection and mythical collection logic
         else:
             content = message.content
             solution = None
@@ -75,18 +75,15 @@ async def on_message(message):
                     new_category = [c for c in guild.categories if c.name == category_name][0]
                     num_channels = len(new_category.channels)
                     print(f"There are {num_channels} channels in the {category_name} category.")
+                    
+                    # Check if the category is full (more than 48 channels), if so, create a new one
                     if len(new_category.channels) <= 48:
                         await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                    elif len(new_category.channels) >= 48:
-                        category_name = '🎉Friends Col 2'
-                        new_category = [c for c in guild.categories if c.name == category_name][0]
-                        if len(new_category.channels) <= 48:
-                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                        else:
-                            category_name = '🎉Friends Col 3'
-                            new_category = [c for c in guild.categories if c.name == category_name][0]
-                            if len(new_category.channels) <= 48:
-                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                    else:
+                        # Create new category if full
+                        new_category_name = category_name + ' 2'
+                        new_category = await guild.create_category(new_category_name)
+                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
                     await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
                 if not solution:
                     solution = solve(content, 'mythical')
@@ -95,16 +92,17 @@ async def on_message(message):
                         category_name = '😈Collection'
                         guild = message.guild
                         new_category = [c for c in guild.categories if c.name == category_name][0]
+                        
+                        # Check if the category is full (more than 48 channels), if so, create a new one
                         if len(new_category.channels) <= 48:
                             await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
                         else:
-                            category_name = '😈Collection 2'
-                            new_category = [c for c in guild.categories if c.name == category_name][0]
-                            if len(new_category.channels) <= 48:
-                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            # Create new category if full
+                            new_category_name = category_name + ' 2'
+                            new_category = await guild.create_category(new_category_name)
+                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
                         await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
-            # Add code to handle other message types or conditions as needed
-          
+
 # Task that sends a random spam message at intervals
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
@@ -119,12 +117,6 @@ async def before_spam():
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-
-# Handles incoming messages
-@client.event
-async def on_message(message):
-    # Your on_message logic remains unchanged
-    pass
 
 # Bot commands
 @client.command()
@@ -152,4 +144,3 @@ async def main():
 # Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
-    
