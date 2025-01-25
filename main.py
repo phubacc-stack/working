@@ -20,92 +20,98 @@ poketwo = 716390085896962058
 client = commands.Bot(command_prefix='Lickitysplit')
 intervals = [2.2, 2.4, 2.6, 2.8]
 
-# Function to solve the hint and search for partial matches
 def solve(message, file_name):
     hint = []
     for i in range(15, len(message) - 1):
         if message[i] != '\\':
             hint.append(message[i])
     hint_string = ''.join(hint)
-    hint_replaced = hint_string.replace('_', '.')
+    hint_replaced = hint_string.replace('_', '.')  # Replaces _ with . for regex matching
+
+    # Open the file containing the Pokémon names
     with open(f"{file_name}", "r") as f:
         solutions = f.read()
-    solution = re.findall(hint_replaced, solutions, re.MULTILINE)  # Partial match for Pokémon name
+
+    # Regex that checks for exact matches, but allows for partial matching
+    solution = re.findall(r'\b' + re.escape(hint_replaced) + r'\b', solutions, re.MULTILINE)
+    
     if len(solution) == 0:
+        print("No valid Pokémon name match found.")
         return None
+    
+    print(f"Matched Pokémon: {solution[0]}")  # Log the match for verification
     return solution
 
-# Event triggered when a message is sent
+async def delete_channel_after_timeout(channel, timeout=10):
+    """Deletes the channel after a timeout unless canceled."""
+    try:
+        await asyncio.sleep(timeout)
+        if channel.guild:
+            await channel.delete()
+            print(f"Channel {channel.name} has been deleted.")
+    except asyncio.CancelledError:
+        print(f"Deletion of {channel.name} has been canceled.")
+
 @client.event
 async def on_message(message):
     channel = client.get_channel(message.channel.id)
     guild = message.guild
     category = channel.category
-
     # Check if message is from Poketwo
     if message.author.id == poketwo:
-        # If message is from the 'catch' category, try to find Pokémon name
         if message.channel.category.name == 'catch':
-            # Check if message contains a Pokémon embed
+            # Check if message contains Pokemon embed
             if message.embeds:
                 embed_title = message.embeds[0].title
                 if 'wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)
                     await channel.send('<@716390085896962058> h')
-            else:
-                content = message.content
-                solution = None
-
-                # Try to solve the Pokémon name from the message content
-                if 'The pokémon is ' in content:
-                    solution = solve(content, 'collection')
-                    if solution:
-                        await channel.clone()
-
-                        # Move to designated category and sync permissions
-                        category_name = '🎉Friends Col'
-                        guild = message.guild
-                        old_category = channel.category
+        else:
+            content = message.content
+            solution = None
+            
+            # Try to solve the Pokemon name from the message content
+            if 'The pokémon is ' in content:
+                solution = solve(content, 'collection')
+                if solution:
+                    await channel.clone()
+                    category_name = '🎉Friends Col'
+                    guild = message.guild
+                    old_category = channel.category
+                    new_category = [c for c in guild.categories if c.name == category_name][0]
+                    num_channels = len(new_category.channels)
+                    print(f"There are {num_channels} channels in the {category_name} category.")
+                    if len(new_category.channels) <= 48:
+                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                    if len(new_category.channels) >= 48:
+                        category_name = '🎉Friends Col 2'
                         new_category = [c for c in guild.categories if c.name == category_name][0]
                         if len(new_category.channels) <= 48:
                             await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                        else:
-                            category_name = '🎉Friends Col 2'
-                            new_category = [c for c in guild.categories if c.name == category_name][0]
-                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                    await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
+            if not solution:
+                solution = solve(content, 'mythical')
+                if solution:
+                    await channel.clone()
+                    category_name = '😈Collection'
+                    guild = message.guild
+                    old_category = channel.category
+                    new_category = [c for c in guild.categories if c.name == category_name][0]
+                    if len(new_category.channels) <= 48:
+                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                    await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
+            
+        # Check if the message contains the "Congratulations" text
+        if "Congratulations" in message.content and message.channel.category.name != 'catch':
+            # Cancel the delete task if it's already running for this channel
+            cancel_delete = False
+            if hasattr(channel, 'delete_task') and channel.delete_task:
+                channel.delete_task.cancel()
+                cancel_delete = True
+            if not cancel_delete:
+                # Schedule channel deletion after 10 seconds
+                channel.delete_task = asyncio.create_task(delete_channel_after_timeout(channel))
 
-                        await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
-                    else:
-                        solution = solve(content, 'mythical')
-                        if solution:
-                            await channel.clone()
-
-                            # Move to designated category and sync permissions
-                            category_name = '😈Collection'
-                            guild = message.guild
-                            old_category = channel.category
-                            new_category = [c for c in guild.categories if c.name == category_name][0]
-                            if len(new_category.channels) <= 48:
-                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                            else:
-                                category_name = '😈Collection 2'
-                                new_category = [c for c in guild.categories if c.name == category_name][0]
-                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-
-                            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
-
-        # Check for 'Congratulations' message for auto-delete feature
-        elif "Congratulations" in message.content and message.channel.category.name not in ['catch']:
-            if "you caught a" in message.content:
-                await asyncio.sleep(10)
-                if not message.deleted:  # Check if message has been deleted before
-                    if "✨" not in message.content:  # If no special message about unusual colors
-                        await channel.delete()
-                        print(f"Deleted channel: {channel.name}")
-                    else:
-                        print(f"Skipped delete for channel: {channel.name}, message had unusual colors.")
-
-# Task that sends a random spam message at intervals
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
     channel = client.get_channel(int(spam_id))
@@ -115,12 +121,10 @@ async def spam():
 async def before_spam():
     await client.wait_until_ready()
 
-# On bot ready event
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
 
-# Bot commands
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
@@ -137,13 +141,11 @@ async def pause(ctx):
         spam.cancel()
     await ctx.send("Spam task has been paused!")
 
-# Main function to run the bot
 async def main():
     async with client:
         spam.start()  # Start the spam task
         await client.start(user_token)
 
-# Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
-                            
+            
