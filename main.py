@@ -25,9 +25,10 @@ def solve(message, file_name):
     for i in range(15, len(message) - 1):
         if message[i] != '\\':
             hint.append(message[i])
-    hint_string = ''.join(hint)
+    hint_string = ''
+    for i in hint:
+        hint_string += i
     hint_replaced = hint_string.replace('_', '.')
-
     with open(f"{file_name}", "r") as f:
         solutions = f.read()
     solution = re.findall('^' + hint_replaced + '$', solutions, re.MULTILINE)
@@ -35,35 +36,25 @@ def solve(message, file_name):
         return None
     return solution
 
-
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
     channel = client.get_channel(int(spam_id))
     await channel.send(''.join(random.sample(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'], 7) * 5))
 
-async def on_ready():
-    print(f'Logged into account: {client.user.name}')
-    guild = client.guilds[0]
-
-
 @spam.before_loop
 async def before_spam():
     await client.wait_until_ready()
 
-spam.start()
-
-
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-
+    spam.start()
 
 @client.event
 async def on_message(message):
     channel = client.get_channel(message.channel.id)
     guild = message.guild
     category = channel.category
-    
     # Check if message is from Poketwo
     if message.author.id == poketwo:
         if message.channel.category.name == 'catch':
@@ -76,16 +67,16 @@ async def on_message(message):
             else:
                 content = message.content
                 solution = None
-                
+
                 # Try to solve the Pokemon name from the message content
                 if 'The pokémon is ' in content:
-                    solution = solve(content, 'collection')  # Solve using the collection file
+                    solution = solve(content, 'collection')
                     if solution:
-                        await channel.clone()  # Clone the channel
-                        
-                        # Move the channel to the appropriate category
+                        await channel.clone()
+                        # If solution found, move to new category and sync.
                         category_name = '🎉Friends Col'
                         guild = message.guild
+                        old_category = channel.category
                         new_category = [c for c in guild.categories if c.name == category_name][0]
                         num_channels = len(new_category.channels)
                         print(f"There are {num_channels} channels in the {category_name} category.")
@@ -98,14 +89,36 @@ async def on_message(message):
                             print(f"There are {num_channels} channels in the {category_name} category.")
                             if len(new_category.channels) <= 48:
                                 await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            else:
+                                category_name = '🎉Friends Col 3'
+                                new_category = [c for c in guild.categories if c.name == category_name][0]
+                                num_channels = len(new_category.channels)
+                                print(f"There are {num_channels} channels in the {category_name} category.")
+                                if len(new_category.channels) <= 48:
+                                    await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                else:
+                                    category_name = '🎉Friends Col 4'
+                                    new_category = [c for c in guild.categories if c.name == category_name][0]
+                                    num_channels = len(new_category.channels)
+                                    print(f"There are {num_channels} channels in the {category_name} category.")
+                                    if len(new_category.channels) <= 48:
+                                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                    else:
+                                        category_name = '🎉Friends Col 5'
+                                        new_category = [c for c in guild.categories if c.name == category_name][0]
+                                        num_channels = len(new_category.channels)
+                                        print(f"There are {num_channels} channels in the {category_name} category.")
+                                        if len(new_category.channels) <= 48:
+                                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                        await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
                     if not solution:
-                        solution = solve(content, 'mythical')  # Solve using the mythical file
+                        solution = solve(content, 'mythical')
                         if solution:
                             await channel.clone()
-
-                            # Move the channel to the mythical collection category
+                            # If solution found, move to new category and sync.
                             category_name = '😈Collection'
                             guild = message.guild
+                            old_category = channel.category
                             new_category = [c for c in guild.categories if c.name == category_name][0]
                             num_channels = len(new_category.channels)
                             print(f"There are {num_channels} channels in the {category_name} category.")
@@ -118,21 +131,41 @@ async def on_message(message):
                                 print(f"There are {num_channels} channels in the {category_name} category.")
                                 if len(new_category.channels) <= 48:
                                     await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-
-                    await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
-
+                                else:
+                                    category_name = '😈Collection 3'
+                                    new_category = [c for c in guild.categories if c.name == category_name][0]
+                                    num_channels = len(new_category.channels)
+                                    print(f"There are {num_channels} channels in the {category_name} category.")
+                                    if len(new_category.channels) <= 48:
+                                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                    else:
+                                        category_name = '😈Collection 4'
+                                        new_category = [c for c in guild.categories if c.name == category_name][0]
+                                        num_channels = len(new_category.channels)
+                                        print(f"There are {num_channels} channels in the {category_name} category.")
+                                        if len(new_category.channels) <= 48:
+                                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                                        else:
+                                            category_name = '😈Collection 5'
+                                            new_category = [c for c in guild.categories if c.name == category_name][0]
+                                            num_channels = len(new_category.channels)
+                                            print(f"There are {num_channels} channels in the {category_name} category.")
+                                            if len(new_category.channels) <= 48:
+                                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+                            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
 
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
 
-
 @client.command()
 async def reboot(ctx):
     spam.start()
-
 
 @client.command()
 async def pause(ctx):
     spam.cancel()
 
+# This will start the bot and the event loop
+client.run(user_token)
+                                                   
