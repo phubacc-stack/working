@@ -57,9 +57,11 @@ async def on_message(message):
 
                     # Check if the cancel message is not triggered
                     if 'these colors seem unusual...✨' not in message.content:
-                        # Delete the channel if the cancel message isn't detected
-                        await channel.delete()
-                        print(f"Channel {channel.name} deleted after catching message.")
+                        # Prevent deletion if the channel is in the 'catch' category
+                        if category.name != 'catch':
+                            # Delete the channel if the cancel message isn't detected
+                            await channel.delete()
+                            print(f"Channel {channel.name} deleted after catching message.")
 
         # Implement cancel option within 10 seconds
         if message.content == 'cancel' and message.author != client.user:
@@ -125,4 +127,4 @@ async def main():
 # Entry point for the script
 if __name__ == "__main__":
     asyncio.run(main())
-    
+        
