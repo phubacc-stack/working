@@ -40,61 +40,51 @@ async def on_message(message):
     guild = message.guild
     category = channel.category
 
-    # Check if the message author is @Pokétwo
+    # Check if message is from Poketwo
     if message.author.id == poketwo:
         if message.channel.category.name == 'catch':
-            # Check if the message contains an embed
             if message.embeds:
                 embed_title = message.embeds[0].title
-                print(f"Embed title: {embed_title}")  # Debug log to check the embed title
-                
-                # Check if the embed title contains 'A new wild pokémon has appeared!' or similar
-                if 'A new wild pokémon has appeared!' in embed_title or 'fled. A new wild pokémon has appeared!' in embed_title:
+                if 'wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)
-                    # Send @Pokétwo#8236 h to trigger the Pokémon response
                     await channel.send('<@716390085896962058> h')
 
-            else:
-                content = message.content
-                solution = None
+            # Handle "Congratulations" message
+            if 'Congratulations' in message.content:
+                if 'You caught a Level' in message.content:
+                    # Start a 10-second timer for cancellation
+                    await asyncio.sleep(10)
 
-                # Try to solve the Pokemon name from the message content
-                if 'The pokémon is ' in content:
-                    solution = solve(content, 'collection')
-                    if solution:
-                        # Clone the channel
-                        new_channel = await channel.clone(name=channel.name)  # Clone with the same name
-                        print(f"Cloned channel: {new_channel.name}")
-                        
-                        # Rename the original channel to the Pokémon name
-                        await channel.edit(name=solution[0].lower().replace(' ', '-'))
-                        print(f"Renamed original channel to: {channel.name}")
-                        
-                        # Move the original channel to the appropriate category
-                        category_name = '🎉Friends Col'
-                        guild = message.guild
-                        new_category = [c for c in guild.categories if c.name == category_name][0]
-                        await channel.edit(category=new_category, sync_permissions=True)
-                        print(f"Moved original channel {channel.name} to category {new_category.name}")
-                        await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
-                    if not solution:
-                        solution = solve(content, 'mythical')
-                        if solution:
-                            # Clone the channel
-                            new_channel = await channel.clone(name=channel.name)  # Clone with the same name
-                            print(f"Cloned channel: {new_channel.name}")
-                            
-                            # Rename the original channel to the Pokémon name
-                            await channel.edit(name=solution[0].lower().replace(' ', '-'))
-                            print(f"Renamed original channel to: {channel.name}")
-                            
-                            # Move the original channel to the appropriate category
-                            category_name = '😈Collection'
-                            guild = message.guild
-                            new_category = [c for c in guild.categories if c.name == category_name][0]
-                            await channel.edit(category=new_category, sync_permissions=True)
-                            print(f"Moved original channel {channel.name} to category {new_category.name}")
-                            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
+                    # Check if the cancel message is not triggered
+                    if 'these colors seem unusual...✨' not in message.content:
+                        # Delete the channel if the cancel message isn't detected
+                        await channel.delete()
+                        print(f"Channel {channel.name} deleted after catching message.")
+
+        # Implement cancel option within 10 seconds
+        if message.content == 'cancel' and message.author != client.user:
+            # Check if the user is canceling within the allowed window
+            await channel.send("Channel deletion canceled!")
+            print(f"Deletion of channel {channel.name} canceled by {message.author}.")
+
+        # Handle Pokemon name solving, channel cloning, and moving
+        if 'The pokémon is ' in message.content:
+            solution = solve(message.content, 'collection')
+            if solution:
+                await channel.clone()
+                category_name = '🎉Friends Col'
+                new_category = [c for c in guild.categories if c.name == category_name][0]
+                if len(new_category.channels) <= 48:
+                    await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
+
+            if not solution:
+                solution = solve(message.content, 'mythical')
+                if solution:
+                    await channel.clone()
+                    category_name = '😈Collection'
+                    new_category = [c for c in guild.categories if c.name == category_name][0]
+                    if len(new_category.channels) <= 48:
+                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
 
 # Task that sends a random spam message at intervals
 @tasks.loop(seconds=random.choice(intervals))
@@ -106,12 +96,10 @@ async def spam():
 async def before_spam():
     await client.wait_until_ready()
 
-# On bot ready event
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
 
-# Bot commands
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
