@@ -1,135 +1,136 @@
-import re, os, asyncio, random
+import re
+import os
+import asyncio
+import random
 from discord.ext import commands, tasks
 
-# Bot version and settings
-version = 'v2.7'
+# Version
+version = 'v2.8'
+
+# Environment Variables
 user_token = os.environ['user_token']
 spam_id = os.environ['spam_id']
 
-# Load the Pokémon and Mythical lists
-with open('pokemon', 'r', encoding='utf8') as file:
-    pokemon_list = file.read()
-with open('mythical', 'r') as file:
-    mythical_list = file.read()
-
-# Initialize counters
-num_pokemon = 0
-shiny = 0
-legendary = 0
-mythical = 0
-
-poketwo = 716390085896962058
+# Constants
+poketwo_id = 716390085896962058
 client = commands.Bot(command_prefix='Lickitysplit')
 intervals = [2.2, 2.4, 2.6, 2.8]
 
-# Function to solve Pokémon name from a hint
+# File Handling
+with open('pokemon', 'r', encoding='utf8') as file:
+    pokemon_list = file.read()
+with open('mythical', 'r', encoding='utf8') as file:
+    mythical_list = file.read()
+
+# Solve Hint Function
 def solve(message, file_name):
-    hint = []
-    for i in range(15, len(message) - 1):
-        if message[i] != '\\':  # Only add characters that aren't backslashes
-            hint.append(message[i])
-    
-    hint_string = ''.join(hint)  # Create the full hint string
-    print(f"Extracted hint: {hint_string}")  # Debugging: Check the extracted hint
-    
-    # Replace underscores (_) with dots (.) to match any character in regex
-    hint_replaced = hint_string.replace('_', r'\.')  # Replace _ with escaped dot \.
-    print(f"Hint for regex match: {hint_replaced}")  # Debugging: Check the regex pattern
-    
-    hint_length = len(hint_string)  # Get the length of the hint string
-    
-    # Read the file with Pokémon names
-    with open(f"{file_name}", "r") as f:
-        solutions = f.read().splitlines()
-    
-    # Debugging: Check all Pokémon names in the file
-    print(f"Total Pokémon in {file_name}: {len(solutions)}")  # Debugging: Show number of Pokémon
-    
-    # Using fullmatch to only match the exact length and pattern
-    matches = [solution for solution in solutions if re.fullmatch(hint_replaced, solution) and len(solution) == hint_length]
-    
-    if len(matches) == 0:
-        print(f"No matches found for hint: {hint_string}")  # Debugging: No matches found
+    hint = message.replace("_", ".")  # Replace underscores with regex dots
+    print(f"Processing hint: {hint}")
+
+    try:
+        with open(file_name, 'r', encoding='utf8') as f:
+            solutions = f.read().splitlines()
+    except FileNotFoundError:
+        print(f"File '{file_name}' not found!")
         return None
-    
-    # Return the matched solutions
-    return matches
 
-# Event that triggers when the bot is ready
-@client.event
-async def on_ready():
-    print(f'Logged into account: {client.user.name}')  # Debugging: Check if bot logs in successfully
+    # Match the hint with Pokémon names in the file
+    matches = [name for name in solutions if re.fullmatch(hint, name)]
+    print(f"Matches found: {matches}")
+    return matches if matches else None
 
-# Event that triggers when a message is received
+# Handle Pokétwo Embeds in Catch Category
 @client.event
 async def on_message(message):
-    print(f"Received message: {message.content}")  # Debugging: Check if message is being received
-    # Check if the message is from Pokétwo and if the message is in the "catch" category
-    if message.author.id == poketwo:
-        channel = client.get_channel(message.channel.id)
-        
-        # Check if the message is in the "catch" category
-        if channel.category and channel.category.name.lower() == 'catch':
-            # Check if the message contains an embed
-            if message.embeds:
-                embed_title = message.embeds[0].title
-                print(f"Embed title: {embed_title}")  # Debugging: Check the embed title
-                
-                # Adjusted check for "A new wild pokémon has appeared!"
-                if 'A new wild pokémon has appeared!' in embed_title:
-                    await asyncio.sleep(1)  # Optional: small delay before sending
-                    await channel.send('<@716390085896962058> h')  # Send @Pokétwo h
-                    print(f"Sent @Pokétwo h in channel {channel.name}")  # Debugging: Check if message is sent
+    if message.author.id == poketwo_id:
+        channel = message.channel
+        category = channel.category
 
-        # Handle the Pokémon collection and mythical collection logic
-        else:
-            content = message.content
-            solution = None
-            
-            # Try to solve the Pokémon name from the message content
-            if 'The pokémon is ' in content:
-                solution = solve(content, 'collection')
-                if solution:
-                    await channel.clone()  # Clone the channel if a match is found
-                    category_name = '🎉Friends Col'
-                    guild = message.guild
-                    old_category = channel.category
-                    new_category = [c for c in guild.categories if c.name == category_name][0]
-                    num_channels = len(new_category.channels)
-                    print(f"There are {num_channels} channels in the {category_name} category.")
-                    
-                    # Check if the category is full (more than 48 channels), if so, create a new one
-                    if len(new_category.channels) <= 48:
-                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                    else:
-                        # Create new category if full
-                        new_category_name = category_name + ' 2'
-                        new_category = await guild.create_category(new_category_name)
-                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                    await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
-                if not solution:
-                    solution = solve(content, 'mythical')
-                    if solution:
-                        await channel.clone()
-                        category_name = '😈Collection'
-                        guild = message.guild
-                        new_category = [c for c in guild.categories if c.name == category_name][0]
-                        
-                        # Check if the category is full (more than 48 channels), if so, create a new one
-                        if len(new_category.channels) <= 48:
-                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                        else:
-                            # Create new category if full
-                            new_category_name = category_name + ' 2'
-                            new_category = await guild.create_category(new_category_name)
-                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                        await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
+        # Check for messages in the "catch" category
+        if category and category.name.lower() == "catch" and message.embeds:
+            embed_title = message.embeds[0].title
+            if "wild pokémon has appeared!" in embed_title.lower():
+                await asyncio.sleep(1)
+                await channel.send(f"<@{poketwo_id}> h")
+                return
 
-# Run the bot
+        # Handle Pokémon hint solutions
+        if "The pokémon is " in message.content:
+            hint = message.content.split("The pokémon is ")[1].strip()
+            solution = solve(hint, "pokemon") or solve(hint, "mythical")
+
+            if solution:
+                await handle_collection(channel, solution[0])
+                await channel.send(f"<@{poketwo_id}> redirect 1 2 3 4 5 6")
+            else:
+                print("No solution found for the hint.")
+
+# Collection Handler
+async def handle_collection(channel, solution):
+    guild = channel.guild
+    category_prefixes = {
+        "🎉Friends Col": "friends_col",
+        "😈Collection": "collection",
+    }
+
+    for prefix, variable_name in category_prefixes.items():
+        categories = [cat for cat in guild.categories if cat.name.startswith(prefix)]
+        for category in categories:
+            if len(category.channels) < 50:
+                await channel.edit(name=solution.lower().replace(" ", "-"), category=category, sync_permissions=True)
+                return
+
+    # If no categories have space, create a new one
+    new_category_name = f"{prefix} {len(categories) + 1}"
+    new_category = await guild.create_category(new_category_name)
+    await channel.edit(name=solution.lower().replace(" ", "-"), category=new_category, sync_permissions=True)
+    print(f"Created new category: {new_category_name}")
+
+# Spam Task
+@tasks.loop(seconds=random.choice(intervals))
+async def spam():
+    try:
+        channel = client.get_channel(int(spam_id))
+        if channel:
+            spam_message = ''.join(random.choices('1234567890', k=35))
+            await channel.send(spam_message)
+    except Exception as e:
+        print(f"Error in spam task: {e}")
+
+@spam.before_loop
+async def before_spam():
+    await client.wait_until_ready()
+
+# On Ready Event
+@client.event
+async def on_ready():
+    print(f"Logged into account: {client.user.name}")
+    if not spam.is_running():
+        spam.start()
+
+# Commands
+@client.command()
+async def report(ctx, *, args):
+    await ctx.send(args)
+
+@client.command()
+async def reboot(ctx):
+    if not spam.is_running():
+        spam.start()
+    await ctx.send("Spam task restarted.")
+
+@client.command()
+async def pause(ctx):
+    if spam.is_running():
+        spam.cancel()
+    await ctx.send("Spam task paused.")
+
+# Main Function
 async def main():
     async with client:
+        spam.start()
         await client.start(user_token)
 
 if __name__ == "__main__":
     asyncio.run(main())
-                        
+    
