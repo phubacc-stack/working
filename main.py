@@ -1,5 +1,9 @@
-import re, os, asyncio, random, string
+import re
+import os
+import asyncio
+import random
 from discord.ext import commands, tasks
+import discord
 
 version = 'v2.7'
 
@@ -11,11 +15,6 @@ with open('pokemon', 'r', encoding='utf8') as file:
 with open('mythical', 'r') as file:
     mythical_list = file.read()
 
-num_pokemon = 0
-shiny = 0
-legendary = 0
-mythical = 0
-
 poketwo = 716390085896962058
 client = commands.Bot(command_prefix='Lickitysplit')
 intervals = [2.2, 2.4, 2.6, 2.8]
@@ -25,21 +24,17 @@ def solve(message, file_name):
     for i in range(15, len(message) - 1):
         if message[i] != '\\':
             hint.append(message[i])
-    hint_string = ''
-    for i in hint:
-        hint_string += i
-    hint_replaced = hint_string.replace('_', '.')
+    hint_string = ''.join(hint).replace('_', '.')
     with open(f"{file_name}", "r") as f:
         solutions = f.read()
-    solution = re.findall('^' + hint_replaced + '$', solutions, re.MULTILINE)
-    if len(solution) == 0:
-        return None
-    return solution
+    solution = re.findall('^' + hint_string + '$', solutions, re.MULTILINE)
+    return solution if solution else None
 
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
     channel = client.get_channel(int(spam_id))
-    await channel.send(''.join(random.sample(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'], 7) * 5))
+    if channel:
+        await channel.send(''.join(random.sample(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'], 7) * 5))
 
 @spam.before_loop
 async def before_spam():
@@ -50,109 +45,74 @@ async def on_ready():
     print(f'Logged into account: {client.user.name}')
     spam.start()
 
+async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
+    """
+    Move the channel to the appropriate category or create a new category dynamically.
+
+    Args:
+        channel: The channel to move.
+        solution: The solution name to use for renaming the channel.
+        base_category_name: The base name for the categories.
+        guild: The Discord guild (server) instance.
+        max_channels: Maximum number of channels allowed per category.
+        max_categories: Maximum number of additional categories to create.
+    """
+    for i in range(1, max_categories + 1):  # Loop through categories
+        category_name = f"{base_category_name} {i}" if i > 1 else base_category_name
+        new_category = discord.utils.get(guild.categories, name=category_name)
+        
+        if new_category is None:
+            # Create a new category if it doesn't exist
+            print(f"Category '{category_name}' does not exist. Creating it now...")
+            new_category = await guild.create_category(category_name)
+            print(f"Created new category: {category_name}")
+        
+        # Check if the category has space for more channels
+        if len(new_category.channels) < max_channels:
+            print(f"Moving channel to {category_name}.")
+            await channel.edit(
+                name=solution.lower().replace(' ', '-'),
+                category=new_category,
+                sync_permissions=True
+            )
+            return  # Exit after moving the channel
+
+    # If no category is available
+    print(f"All {base_category_name} categories are full. No further categories created.")
+
 @client.event
 async def on_message(message):
-    channel = client.get_channel(message.channel.id)
-    guild = message.guild
-    category = channel.category
-    # Check if message is from Poketwo
     if message.author.id == poketwo:
-        if message.channel.category.name == 'catch':
-            # Check if message contains Pokemon embed
+        if message.channel.category and message.channel.category.name == 'catch':
             if message.embeds:
                 embed_title = message.embeds[0].title
                 if 'wild pokémon has appeared!' in embed_title:
                     await asyncio.sleep(1)
-                    await channel.send('<@716390085896962058> h')
+                    await message.channel.send('<@716390085896962058> h')
             else:
                 content = message.content
                 solution = None
 
-                # Try to solve the Pokemon name from the message content
                 if 'The pokémon is ' in content:
+                    # Try solving from the 'collection' file
                     solution = solve(content, 'collection')
                     if solution:
-                        await channel.clone()
-                        # If solution found, move to new category and sync.
-                        category_name = '🎉Friends Col'
-                        guild = message.guild
-                        old_category = channel.category
-                        new_category = [c for c in guild.categories if c.name == category_name][0]
-                        num_channels = len(new_category.channels)
-                        print(f"There are {num_channels} channels in the {category_name} category.")
-                        if len(new_category.channels) <= 48:
-                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                        else:
-                            category_name = '🎉Friends Col 2'
-                            new_category = [c for c in guild.categories if c.name == category_name][0]
-                            num_channels = len(new_category.channels)
-                            print(f"There are {num_channels} channels in the {category_name} category.")
-                            if len(new_category.channels) <= 48:
-                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                            else:
-                                category_name = '🎉Friends Col 3'
-                                new_category = [c for c in guild.categories if c.name == category_name][0]
-                                num_channels = len(new_category.channels)
-                                print(f"There are {num_channels} channels in the {category_name} category.")
-                                if len(new_category.channels) <= 48:
-                                    await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                                else:
-                                    category_name = '🎉Friends Col 4'
-                                    new_category = [c for c in guild.categories if c.name == category_name][0]
-                                    num_channels = len(new_category.channels)
-                                    print(f"There are {num_channels} channels in the {category_name} category.")
-                                    if len(new_category.channels) <= 48:
-                                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                                    else:
-                                        category_name = '🎉Friends Col 5'
-                                        new_category = [c for c in guild.categories if c.name == category_name][0]
-                                        num_channels = len(new_category.channels)
-                                        print(f"There are {num_channels} channels in the {category_name} category.")
-                                        if len(new_category.channels) <= 48:
-                                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                        await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
-                    if not solution:
+                        await move_to_category(
+                            channel=message.channel,
+                            solution=solution[0],
+                            base_category_name='🎉Friends Col',
+                            guild=message.guild
+                        )
+                    else:
+                        # Try solving from the 'mythical' file
                         solution = solve(content, 'mythical')
                         if solution:
-                            await channel.clone()
-                            # If solution found, move to new category and sync.
-                            category_name = '😈Collection'
-                            guild = message.guild
-                            old_category = channel.category
-                            new_category = [c for c in guild.categories if c.name == category_name][0]
-                            num_channels = len(new_category.channels)
-                            print(f"There are {num_channels} channels in the {category_name} category.")
-                            if len(new_category.channels) <= 48:
-                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                            else:
-                                category_name = '😈Collection 2'
-                                new_category = [c for c in guild.categories if c.name == category_name][0]
-                                num_channels = len(new_category.channels)
-                                print(f"There are {num_channels} channels in the {category_name} category.")
-                                if len(new_category.channels) <= 48:
-                                    await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                                else:
-                                    category_name = '😈Collection 3'
-                                    new_category = [c for c in guild.categories if c.name == category_name][0]
-                                    num_channels = len(new_category.channels)
-                                    print(f"There are {num_channels} channels in the {category_name} category.")
-                                    if len(new_category.channels) <= 48:
-                                        await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                                    else:
-                                        category_name = '😈Collection 4'
-                                        new_category = [c for c in guild.categories if c.name == category_name][0]
-                                        num_channels = len(new_category.channels)
-                                        print(f"There are {num_channels} channels in the {category_name} category.")
-                                        if len(new_category.channels) <= 48:
-                                            await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                                        else:
-                                            category_name = '😈Collection 5'
-                                            new_category = [c for c in guild.categories if c.name == category_name][0]
-                                            num_channels = len(new_category.channels)
-                                            print(f"There are {num_channels} channels in the {category_name} category.")
-                                            if len(new_category.channels) <= 48:
-                                                await channel.edit(name=solution[0].lower().replace(' ', '-'), category=new_category, sync_permissions=True)
-                            await channel.send(f'<@716390085896962058> redirect 1 2 3 4 5 6 ')
+                            await move_to_category(
+                                channel=message.channel,
+                                solution=solution[0],
+                                base_category_name='😈Collection',
+                                guild=message.guild
+                            )
 
 @client.command()
 async def report(ctx, *, args):
@@ -168,4 +128,3 @@ async def pause(ctx):
 
 # This will start the bot and the event loop
 client.run(user_token)
-                                                   
