@@ -17,7 +17,7 @@ with open('mythical', 'r') as file:
 
 poketwo = 716390085896962058
 client = commands.Bot(command_prefix='Lickitysplit')
-intervals = [2.2, 2.4, 2.6, 2.8]
+intervals = [5.0, 5.2, 5.4, 5.6]
 
 def solve(message, file_name):
     hint = []
