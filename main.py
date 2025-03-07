@@ -127,7 +127,14 @@ async def report(ctx, *, args):
 
 @client.command()
 async def reboot(ctx):
+    # Stop the current spam loop if it's running
+    if spam.is_running():
+        spam.cancel()
+        await ctx.send("Spam loop has been stopped.")
+
+    # Restart the spam loop
     spam.start()
+    await ctx.send("Spam loop has been restarted.")
 
 @client.command()
 async def pause(ctx):
