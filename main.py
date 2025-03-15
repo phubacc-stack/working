@@ -84,7 +84,7 @@ async def on_message(message):
     Processes incoming messages.
     
     - For messages from Pokétwo:
-      * If the message is an embed with a wild spawn, wait 37 seconds for a congratulatory message.
+      * If the message is an embed with a wild spawn, wait 55 seconds for a congratulatory message.
         If none is received, send '<@716390085896962058> h'.
       * If the message is not an embed, check for a solution hint and clone/move the channel accordingly.
     - Also ensures other commands are processed.
@@ -98,7 +98,7 @@ async def on_message(message):
                         return (m.author.id == poketwo and 
                                 m.channel == message.channel and 
                                 m.content.startswith("Congratulations"))
-                    await client.wait_for('message', timeout=7.0, check=check)
+                    await client.wait_for('message', timeout=55.0, check=check)
                 except asyncio.TimeoutError:
                     await message.channel.send('<@716390085896962058> h')
         else:
