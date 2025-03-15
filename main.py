@@ -16,24 +16,28 @@ with open('mythical', 'r') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
-intents = discord.Intents.default()
-intents.messages = True  # Required for message listening
-client = commands.Bot(command_prefix='!', intents=intents)
+client = commands.Bot(command_prefix="!")
 
-intervals = [3.8, 4.0, 4.2, 4.4]
+# Updated spam intervals
+intervals = [3.6, 2.8, 3.0, 3.2, 3.4]
 
 def solve(message, file_name):
+    """
+    Extracts a hint from the message and finds matching solutions in the given file.
+    """
     hint = [c for c in message[15:-1] if c != '\\']
     hint_string = ''.join(hint).replace('_', '.')
-    
     with open(f"{file_name}", "r") as f:
         solutions = f.read()
-    
     solution = re.findall(f'^{hint_string}$', solutions, re.MULTILINE)
     return solution if solution else None
 
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
+    """
+    Sends a spam message to the designated channel at a random interval.
+    Handles rate limits and Discord server errors with retries.
+    """
     channel = client.get_channel(int(spam_id))
     if not channel:
         print("Channel not found.")
@@ -41,53 +45,65 @@ async def spam():
 
     message_content = ''.join(random.sample('1234567890', 7) * 5)
 
-    for attempt in range(4):  # Maximum 4 retries with backoff
-        try:
-            await channel.send(message_content)
-            return  # Exit if successful
-        except discord.errors.HTTPException as e:
-            if e.status == 429:
-                retry_after = getattr(e, 'retry_after', 5)
-                print(f"Rate limit exceeded. Retrying in {retry_after} seconds...")
-                await asyncio.sleep(retry_after)
-            else:
-                print(f"HTTP error: {e}. Retrying in 60 seconds...")
-                await asyncio.sleep(60)
-        except discord.errors.DiscordServerError as e:
-            backoff_time = 60 * (2 ** attempt)  # Exponential backoff
-            print(f"Discord server error: {e}. Retrying in {backoff_time} seconds...")
-            await asyncio.sleep(backoff_time)
-
-    print("All send attempts failed. Skipping this iteration.")
+    try:
+        await channel.send(message_content)
+    except discord.errors.HTTPException as e:
+        if e.status == 429:
+            retry_after = getattr(e, 'retry_after', 5)
+            print(f"Rate limit exceeded. Retrying in {retry_after} seconds...")
+            await asyncio.sleep(retry_after)
+            await spam()
+        else:
+            print(f"HTTP error: {e}. Retrying in 60 seconds...")
+            await asyncio.sleep(60)
+            await spam()
+    except discord.errors.DiscordServerError as e:
+        print(f"Discord server error: {e}. Retrying in 60 seconds...")
+        await asyncio.sleep(60)
+        await spam()
 
 @spam.before_loop
 async def before_spam():
+    """
+    Waits until the client is ready before starting the spam loop.
+    """
     await client.wait_until_ready()
 
 @client.event
 async def on_ready():
+    """
+    Called when the bot is ready.
+    Prints the bot's name and starts the spam loop.
+    """
     print(f'Logged into account: {client.user.name}')
     spam.start()
 
 @client.event
 async def on_message(message):
+    """
+    Processes incoming messages.
+    
+    - For messages from Pokétwo:
+      * If the message is an embed with a wild spawn, wait 7 seconds for a congratulatory message.
+        If none is received, send '<@716390085896962058> h'.
+      * If the message is not an embed, check for a solution hint and clone/move the channel accordingly.
+    - Also ensures other commands are processed.
+    """
     if message.author.id == poketwo and message.channel.category:
         if message.embeds:
             embed_title = message.embeds[0].title
             if 'wild pokémon has appeared!' in embed_title:
                 try:
                     def check(m):
-                        return m.author.id == poketwo and m.channel == message.channel and m.content.startswith("Congratulations")
-
+                        return (m.author.id == poketwo and 
+                                m.channel == message.channel and 
+                                m.content.startswith("Congratulations"))
                     await client.wait_for('message', timeout=7.0, check=check)
-                    # If a congratulatory message appears, do nothing.
                 except asyncio.TimeoutError:
-                    # If no one catches it within 7 seconds, send the command.
                     await message.channel.send('<@716390085896962058> h')
         else:
             content = message.content
             solution = None
-
             if 'The pokémon is ' in content:
                 solution = solve(content, 'collection')
                 if solution:
@@ -112,18 +128,19 @@ async def on_message(message):
                             guild=message.guild
                         )
                         await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
-
-    await client.process_commands(message)  # Ensure bot still processes commands
+    await client.process_commands(message)
 
 async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
+    """
+    Moves the channel to the appropriate category based on the solution.
+    If the category doesn't exist, it creates one. Checks for max channel limits.
+    """
     for i in range(1, max_categories + 1):
         category_name = f"{base_category_name} {i}" if i > 1 else base_category_name
         category = discord.utils.get(guild.categories, name=category_name)
-
         if category is None:
             print(f"Creating new category: {category_name}")
             category = await guild.create_category(category_name)
-
         if len(category.channels) < max_channels:
             print(f"Moving channel to category: {category_name}")
             await channel.edit(
@@ -132,15 +149,22 @@ async def move_to_category(channel, solution, base_category_name, guild, max_cha
                 sync_permissions=True,
             )
             return
-
     print(f"All {base_category_name} categories are full.")
 
 @client.command()
 async def report(ctx, *, args):
+    """
+    A command to send a report message.
+    Usage: !report <message>
+    """
     await ctx.send(args)
 
 @client.command()
 async def reboot(ctx):
+    """
+    A command to reboot the spam loop.
+    Usage: !reboot
+    """
     if spam.is_running():
         spam.cancel()
         await ctx.send("Spam loop has been stopped.")
@@ -149,7 +173,10 @@ async def reboot(ctx):
 
 @client.command()
 async def pause(ctx):
+    """
+    A command to pause the spam loop.
+    Usage: !pause
+    """
     spam.cancel()
 
 client.run(user_token)
-                        
