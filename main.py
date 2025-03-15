@@ -84,7 +84,7 @@ async def on_message(message):
     Processes incoming messages.
     
     - For messages from Pokétwo:
-      * If the message is an embed with a wild spawn, wait 7 seconds for a congratulatory message.
+      * If the message is an embed with a wild spawn, wait 17 seconds for a congratulatory message.
         If none is received, send '<@716390085896962058> h'.
       * If the message is not an embed, check for a solution hint and clone/move the channel accordingly.
     - Also ensures other commands are processed.
