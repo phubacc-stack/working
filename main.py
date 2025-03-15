@@ -16,25 +16,49 @@ with open('mythical', 'r') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
-client = commands.Bot(command_prefix='Lickitysplit')
+intents = discord.Intents.default()
+intents.messages = True  # Required for message listening
+client = commands.Bot(command_prefix='!', intents=intents)
+
 intervals = [3.8, 4.0, 4.2, 4.4]
 
 def solve(message, file_name):
-    hint = []
-    for i in range(15, len(message) - 1):
-        if message[i] != '\\':
-            hint.append(message[i])
+    hint = [c for c in message[15:-1] if c != '\\']
     hint_string = ''.join(hint).replace('_', '.')
+    
     with open(f"{file_name}", "r") as f:
         solutions = f.read()
-    solution = re.findall('^' + hint_string + '$', solutions, re.MULTILINE)
+    
+    solution = re.findall(f'^{hint_string}$', solutions, re.MULTILINE)
     return solution if solution else None
 
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
     channel = client.get_channel(int(spam_id))
-    if channel:
-        await channel.send(''.join(random.sample(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'], 7) * 5))
+    if not channel:
+        print("Channel not found.")
+        return
+
+    message_content = ''.join(random.sample('1234567890', 7) * 5)
+
+    for attempt in range(4):  # Maximum 4 retries with backoff
+        try:
+            await channel.send(message_content)
+            return  # Exit if successful
+        except discord.errors.HTTPException as e:
+            if e.status == 429:
+                retry_after = getattr(e, 'retry_after', 5)
+                print(f"Rate limit exceeded. Retrying in {retry_after} seconds...")
+                await asyncio.sleep(retry_after)
+            else:
+                print(f"HTTP error: {e}. Retrying in 60 seconds...")
+                await asyncio.sleep(60)
+        except discord.errors.DiscordServerError as e:
+            backoff_time = 60 * (2 ** attempt)  # Exponential backoff
+            print(f"Discord server error: {e}. Retrying in {backoff_time} seconds...")
+            await asyncio.sleep(backoff_time)
+
+    print("All send attempts failed. Skipping this iteration.")
 
 @spam.before_loop
 async def before_spam():
@@ -45,18 +69,53 @@ async def on_ready():
     print(f'Logged into account: {client.user.name}')
     spam.start()
 
-async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
-    """
-    Move the original channel to the appropriate category or create a new category dynamically.
+@client.event
+async def on_message(message):
+    if message.author.id == poketwo and message.channel.category:
+        if message.embeds:
+            embed_title = message.embeds[0].title
+            if 'wild pokémon has appeared!' in embed_title:
+                try:
+                    def check(m):
+                        return m.author.id == poketwo and m.channel == message.channel and m.content.startswith("Congratulations")
 
-    Args:
-        channel: The original channel to move.
-        solution: The solution name to use for renaming the cloned channel.
-        base_category_name: The base name for the categories.
-        guild: The Discord guild (server) instance.
-        max_channels: Maximum number of channels allowed per category.
-        max_categories: Maximum number of additional categories to create.
-    """
+                    await client.wait_for('message', timeout=7.0, check=check)
+                    # If a congratulatory message appears, do nothing.
+                except asyncio.TimeoutError:
+                    # If no one catches it within 7 seconds, send the command.
+                    await message.channel.send('<@716390085896962058> h')
+        else:
+            content = message.content
+            solution = None
+
+            if 'The pokémon is ' in content:
+                solution = solve(content, 'collection')
+                if solution:
+                    cloned_channel = await message.channel.clone(reason="Cloning for backup")
+                    await cloned_channel.send("Pokémon spawn has been backed up here.")
+                    await move_to_category(
+                        channel=message.channel,
+                        solution=solution[0],
+                        base_category_name="🎉Friends Col",
+                        guild=message.guild
+                    )
+                    await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
+                else:
+                    solution = solve(content, 'mythical')
+                    if solution:
+                        cloned_channel = await message.channel.clone(reason="Cloning for backup")
+                        await cloned_channel.send("Pokémon spawn has been backed up here.")
+                        await move_to_category(
+                            channel=message.channel,
+                            solution=solution[0],
+                            base_category_name="😈Collection",
+                            guild=message.guild
+                        )
+                        await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
+
+    await client.process_commands(message)  # Ensure bot still processes commands
+
+async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
     for i in range(1, max_categories + 1):
         category_name = f"{base_category_name} {i}" if i > 1 else base_category_name
         category = discord.utils.get(guild.categories, name=category_name)
@@ -76,63 +135,15 @@ async def move_to_category(channel, solution, base_category_name, guild, max_cha
 
     print(f"All {base_category_name} categories are full.")
 
-@client.event
-async def on_message(message):
-    if message.author.id == poketwo and message.channel.category:
-        if message.embeds:
-            embed_title = message.embeds[0].title
-            if 'wild pokémon has appeared!' in embed_title:
-                await asyncio.sleep(1)
-                await message.channel.send('<@716390085896962058> h')
-        else:
-            content = message.content
-            solution = None
-
-            if 'The pokémon is ' in content:
-                solution = solve(content, 'collection')
-                if solution:
-                    # Clone the channel without the embed
-                    cloned_channel = await message.channel.clone(reason="Cloning for backup")
-                    # Keep the cloned channel in the 'catch' category without an embed
-                    await cloned_channel.send("Pokémon spawn has been backed up here.")  # Optional message
-
-                    # Move and rename the original channel
-                    await move_to_category(
-                        channel=message.channel,  # Move the original channel
-                        solution=solution[0],
-                        base_category_name="🎉Friends Col",
-                        guild=message.guild
-                    )
-                    await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
-                else:
-                    solution = solve(content, 'mythical')
-                    if solution:
-                        # Clone the channel without the embed
-                        cloned_channel = await message.channel.clone(reason="Cloning for backup")
-                        # Keep the cloned channel in the 'catch' category without an embed
-                        await cloned_channel.send("Pokémon spawn has been backed up here.")  # Optional message
-
-                        # Move and rename the original channel
-                        await move_to_category(
-                            channel=message.channel,  # Move the original channel
-                            solution=solution[0],
-                            base_category_name="😈Collection",
-                            guild=message.guild
-                        )
-                        await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
-
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
 
 @client.command()
 async def reboot(ctx):
-    # Stop the current spam loop if it's running
     if spam.is_running():
         spam.cancel()
         await ctx.send("Spam loop has been stopped.")
-
-    # Restart the spam loop
     spam.start()
     await ctx.send("Spam loop has been restarted.")
 
@@ -141,3 +152,4 @@ async def pause(ctx):
     spam.cancel()
 
 client.run(user_token)
+                        
