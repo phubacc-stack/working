@@ -5,6 +5,8 @@ import asyncio
 import random
 import discord
 from discord.ext import commands, tasks
+import threading
+from flask import Flask
 
 version = 'v2.7'
 
@@ -23,7 +25,7 @@ if not spam_id:
 # --- Read Files ---
 with open('pokemon', 'r', encoding='utf8') as file:
     pokemon_list = file.read()
-with open('mythical', 'r') as file:
+with open('mythical', 'r', encoding='utf8') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
@@ -33,9 +35,6 @@ client = commands.Bot(command_prefix="!")
 intervals = [3.6, 2.8, 3.0, 3.2, 3.4]
 
 def solve(message, file_name):
-    """
-    Extracts a hint from the message and finds matching solutions in the given file.
-    """
     hint = [c for c in message[15:-1] if c != '\\']
     hint_string = ''.join(hint).replace('_', '.')
     with open(file_name, "r") as f:
@@ -45,10 +44,6 @@ def solve(message, file_name):
 
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
-    """
-    Sends a spam message to the designated channel at a random interval.
-    Handles rate limits and Discord server errors with retries.
-    """
     channel = client.get_channel(int(spam_id))
     if not channel:
         print("Channel not found.")
@@ -75,31 +70,15 @@ async def spam():
 
 @spam.before_loop
 async def before_spam():
-    """
-    Waits until the client is ready before starting the spam loop.
-    """
     await client.wait_until_ready()
 
 @client.event
 async def on_ready():
-    """
-    Called when the bot is ready.
-    Prints the bot's name and starts the spam loop.
-    """
     print(f'Logged into account: {client.user.name}')
     spam.start()
 
 @client.event
 async def on_message(message):
-    """
-    Processes incoming messages.
-
-    - For messages from Pokétwo:
-      * If the message is an embed with a wild spawn, wait 55 seconds for a congratulatory message.
-        If none is received, send '<@716390085896962058> h'.
-      * If the message is not an embed, check for a solution hint and clone/move the channel accordingly.
-    - Also ensures other commands are processed.
-    """
     if message.author.id == poketwo and message.channel.category:
         if message.embeds:
             embed_title = message.embeds[0].title
@@ -144,10 +123,6 @@ async def on_message(message):
     await client.process_commands(message)
 
 async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
-    """
-    Moves the channel to the appropriate category based on the solution.
-    If the category doesn't exist, it creates one. Checks for max channel limits.
-    """
     for i in range(1, max_categories + 1):
         category_name = f"{base_category_name} {i}" if i > 1 else base_category_name
         category = discord.utils.get(guild.categories, name=category_name)
@@ -166,18 +141,10 @@ async def move_to_category(channel, solution, base_category_name, guild, max_cha
 
 @client.command()
 async def report(ctx, *, args):
-    """
-    A command to send a report message.
-    Usage: !report <message>
-    """
     await ctx.send(args)
 
 @client.command()
 async def reboot(ctx):
-    """
-    A command to reboot the spam loop.
-    Usage: !reboot
-    """
     if spam.is_running():
         spam.cancel()
         await ctx.send("Spam loop has been stopped.")
@@ -186,10 +153,19 @@ async def reboot(ctx):
 
 @client.command()
 async def pause(ctx):
-    """
-    A command to pause the spam loop.
-    Usage: !pause
-    """
     spam.cancel()
 
+# --- Fake Webserver for Render ---
+app = Flask("")
+
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_server():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+threading.Thread(target=run_server).start()
+
+# --- Run Discord Bot ---
 client.run(user_token)
