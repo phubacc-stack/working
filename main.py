@@ -1,15 +1,26 @@
-import re
 import os
+import sys
+import re
 import asyncio
 import random
-from discord.ext import commands, tasks
 import discord
+from discord.ext import commands, tasks
 
 version = 'v2.7'
 
-user_token = os.environ['user_token']
-spam_id = os.environ['spam_id']
+# --- Environment Variables ---
+user_token = os.getenv("user_token")
+spam_id = os.getenv("spam_id")
 
+if not user_token:
+    print("[ERROR] Missing environment variable: user_token")
+    sys.exit(1)
+
+if not spam_id:
+    print("[ERROR] Missing environment variable: spam_id")
+    sys.exit(1)
+
+# --- Read Files ---
 with open('pokemon', 'r', encoding='utf8') as file:
     pokemon_list = file.read()
 with open('mythical', 'r') as file:
@@ -27,7 +38,7 @@ def solve(message, file_name):
     """
     hint = [c for c in message[15:-1] if c != '\\']
     hint_string = ''.join(hint).replace('_', '.')
-    with open(f"{file_name}", "r") as f:
+    with open(file_name, "r") as f:
         solutions = f.read()
     solution = re.findall(f'^{hint_string}$', solutions, re.MULTILINE)
     return solution if solution else None
@@ -82,7 +93,7 @@ async def on_ready():
 async def on_message(message):
     """
     Processes incoming messages.
-    
+
     - For messages from Pokétwo:
       * If the message is an embed with a wild spawn, wait 55 seconds for a congratulatory message.
         If none is received, send '<@716390085896962058> h'.
@@ -95,9 +106,11 @@ async def on_message(message):
             if 'wild pokémon has appeared!' in embed_title:
                 try:
                     def check(m):
-                        return (m.author.id == poketwo and 
-                                m.channel == message.channel and 
-                                m.content.startswith("Congratulations"))
+                        return (
+                            m.author.id == poketwo and
+                            m.channel == message.channel and
+                            m.content.startswith("Congratulations")
+                        )
                     await client.wait_for('message', timeout=55.0, check=check)
                 except asyncio.TimeoutError:
                     await message.channel.send('<@716390085896962058> h')
