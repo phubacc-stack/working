@@ -107,7 +107,7 @@ async def on_message(message):
                         base_category_name="🎉Friends Col",
                         guild=message.guild
                     )
-                    await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
+                    await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 ')
                 else:
                     solution = solve(content, 'mythical')
                     if solution:
@@ -170,3 +170,4 @@ threading.Thread(target=run_server).start()
 # --- Run Discord Bot ---
 client.run(user_token)
     
+
