@@ -49,6 +49,27 @@ def solve(message, file_name):
     solution = re.findall(f'^{hint_string}$', solutions, re.MULTILINE)
     return solution if solution else None
 
+# --- Safe message sender ---
+async def send_message_safe(channel, content):
+    while True:
+        try:
+            await channel.send(content)
+            break  # message sent successfully
+        except discord.errors.HTTPException as e:
+            if e.status == 429:
+                retry_after = getattr(e, 'retry_after', 5)
+                print(f"Rate limit exceeded. Waiting {retry_after} seconds...")
+                await asyncio.sleep(retry_after)
+            else:
+                print(f"HTTPException: {e}. Retrying in 60 seconds...")
+                await asyncio.sleep(60)
+        except discord.errors.DiscordServerError as e:
+            print(f"Discord server error: {e}. Retrying in 60 seconds...")
+            await asyncio.sleep(60)
+        except Exception as e:
+            print(f"Unexpected error: {e}. Retrying in 60 seconds...")
+            await asyncio.sleep(60)
+
 # --- Spam loop ---
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
@@ -58,23 +79,7 @@ async def spam():
         return
 
     message_content = ''.join(random.sample('1234567890', 7) * 5)
-
-    try:
-        await channel.send(message_content)
-    except discord.errors.HTTPException as e:
-        if e.status == 429:
-            retry_after = getattr(e, 'retry_after', 5)
-            print(f"Rate limit exceeded. Retrying in {retry_after} seconds...")
-            await asyncio.sleep(retry_after)
-            await spam()
-        else:
-            print(f"HTTP error: {e}. Retrying in 60 seconds...")
-            await asyncio.sleep(60)
-            await spam()
-    except discord.errors.DiscordServerError as e:
-        print(f"Discord server error: {e}. Retrying in 60 seconds...")
-        await asyncio.sleep(60)
-        await spam()
+    await send_message_safe(channel, message_content)
 
 @spam.before_loop
 async def before_spam():
