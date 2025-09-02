@@ -119,7 +119,7 @@ async def on_message(message):
                             base_category_name="😈Collection",
                             guild=message.guild
                         )
-                        await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
+                        await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20')
     await client.process_commands(message)
 
 async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
@@ -170,4 +170,5 @@ threading.Thread(target=run_server).start()
 # --- Run Discord Bot ---
 client.run(user_token)
     
+
 
