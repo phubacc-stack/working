@@ -155,7 +155,7 @@ async def reboot(ctx):
 async def pause(ctx):
     spam.cancel()
 
-# --- Fake Webserver for Render Keep-Alive ---
+# --- Fake Webserver for Render ---
 app = Flask("")
 
 @app.route("/")
@@ -163,13 +163,10 @@ def home():
     return "Bot is running!"
 
 def run_server():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
-# Start Flask server in a separate thread so it doesn't block Discord bot
-threading.Thread(target=run_server, daemon=True).start()
+threading.Thread(target=run_server).start()
 
 # --- Run Discord Bot ---
 client.run(user_token)
-                            client.run(user_token)
-
+    
