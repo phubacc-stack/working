@@ -7,12 +7,15 @@ import discord
 from discord.ext import commands, tasks
 import threading
 from flask import Flask
+import requests
+import time
 
 version = 'v2.7'
 
 # --- Environment Variables ---
 user_token = os.getenv("user_token")
 spam_id = os.getenv("spam_id")
+service_url = os.getenv("SERVICE_URL")  # Optional: Render URL for self-ping
 
 if not user_token:
     print("[ERROR] Missing environment variable: user_token")
@@ -21,6 +24,9 @@ if not user_token:
 if not spam_id:
     print("[ERROR] Missing environment variable: spam_id")
     sys.exit(1)
+
+if not service_url:
+    service_url = "https://working-1-uy7j.onrender.com"  # fallback
 
 # --- Read Files ---
 with open('pokemon', 'r', encoding='utf8') as file:
@@ -31,9 +37,10 @@ with open('mythical', 'r', encoding='utf8') as file:
 poketwo = 716390085896962058
 client = commands.Bot(command_prefix="!")
 
-# Updated spam intervals
+# Spam intervals
 intervals = [3.6, 2.8, 3.0, 3.2, 3.4]
 
+# --- Solve hints ---
 def solve(message, file_name):
     hint = [c for c in message[15:-1] if c != '\\']
     hint_string = ''.join(hint).replace('_', '.')
@@ -42,6 +49,7 @@ def solve(message, file_name):
     solution = re.findall(f'^{hint_string}$', solutions, re.MULTILINE)
     return solution if solution else None
 
+# --- Spam loop ---
 @tasks.loop(seconds=random.choice(intervals))
 async def spam():
     channel = client.get_channel(int(spam_id))
@@ -72,11 +80,25 @@ async def spam():
 async def before_spam():
     await client.wait_until_ready()
 
+# --- On ready ---
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
     spam.start()
+    asyncio.create_task(self_ping_loop())
 
+# --- Self-ping loop to keep Render alive ---
+async def self_ping_loop():
+    await client.wait_until_ready()
+    while True:
+        try:
+            r = requests.get(service_url)
+            print(f"Pinged {service_url} - status: {r.status_code}")
+        except Exception as e:
+            print(f"Error pinging self: {e}")
+        await asyncio.sleep(600)  # ping every 10 minutes
+
+# --- Discord on_message ---
 @client.event
 async def on_message(message):
     if message.author.id == poketwo and message.channel.category:
@@ -107,7 +129,7 @@ async def on_message(message):
                         base_category_name="🎉Friends Col",
                         guild=message.guild
                     )
-                    await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 ')
+                    await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
                 else:
                     solution = solve(content, 'mythical')
                     if solution:
@@ -119,9 +141,10 @@ async def on_message(message):
                             base_category_name="😈Collection",
                             guild=message.guild
                         )
-                        await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20')
+                        await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
     await client.process_commands(message)
 
+# --- Move to category ---
 async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
     for i in range(1, max_categories + 1):
         category_name = f"{base_category_name} {i}" if i > 1 else base_category_name
@@ -139,6 +162,7 @@ async def move_to_category(channel, solution, base_category_name, guild, max_cha
             return
     print(f"All {base_category_name} categories are full.")
 
+# --- Commands ---
 @client.command()
 async def report(ctx, *, args):
     await ctx.send(args)
@@ -155,7 +179,7 @@ async def reboot(ctx):
 async def pause(ctx):
     spam.cancel()
 
-# --- Fake Webserver for Render ---
+# --- Flask server for uptime ---
 app = Flask("")
 
 @app.route("/")
@@ -167,8 +191,11 @@ def run_server():
 
 threading.Thread(target=run_server).start()
 
-# --- Run Discord Bot ---
-client.run(user_token)
-    
-
-
+# --- Run bot with auto-restart ---
+while True:
+    try:
+        client.run(user_token)
+    except Exception as e:
+        print(f"Bot crashed: {e}. Restarting in 10 seconds...")
+        time.sleep(10)
+        
