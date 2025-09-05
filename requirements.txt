@@ -5,3 +5,7 @@ Flask>=2.0
 gunicorn>=20.0
 
 requests>=2.0
+
+git+https://github.com/dolfies/discord.py-self
+requests
+flask
