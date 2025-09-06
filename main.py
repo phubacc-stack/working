@@ -10,7 +10,7 @@ from flask import Flask
 import requests
 import time
 
-version = 'v2.7'
+version = 'v2.8'
 
 # --- Environment Variables ---
 user_token = os.getenv("user_token")
@@ -35,7 +35,7 @@ with open('mythical', 'r', encoding='utf8') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
-client = commands.Bot(command_prefix="!")
+client = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
 # Spam intervals
 intervals = [3.6, 2.8, 3.0, 3.2, 3.4]
@@ -147,6 +147,7 @@ async def on_message(message):
                             guild=message.guild
                         )
                         await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
+    # Make sure commands are processed
     await client.process_commands(message)
 
 # --- Move to category ---
@@ -183,6 +184,34 @@ async def reboot(ctx):
 @client.command()
 async def pause(ctx):
     spam.cancel()
+
+# --- NEW: Reddit NSFW commands ---
+@client.command()
+async def redditnsfw(ctx, subreddit: str = "trainerfucks"):
+    """Fetch a random NSFW post from a subreddit"""
+    try:
+        headers = {"User-Agent": "DiscordBot/1.0"}
+        url = f"https://www.reddit.com/r/{subreddit}/random/.json?limit=1"
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            await ctx.send(f"Failed to fetch from r/{subreddit}.")
+            return
+
+        data = response.json()
+        post = data[0]["data"]["children"][0]["data"]
+
+        title = post["title"]
+        image_url = post.get("url")
+
+        await ctx.send(f"**{title}**\n{image_url}")
+    except Exception as e:
+        await ctx.send(f"Error: {e}")
+
+@client.command()
+async def randomnsfw(ctx):
+    """Fetch a random NSFW post from r/trainerfucks"""
+    await redditnsfw(ctx, "trainerfucks")
 
 # --- Flask server for uptime ---
 app = Flask("")
