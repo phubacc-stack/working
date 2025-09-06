@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import asyncio
 import random as pyrandom
 import discord
@@ -9,7 +10,7 @@ from flask import Flask
 import aiohttp
 import asyncpraw
 
-version = 'v3.5-selfbot'
+version = 'v3.5'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -39,11 +40,9 @@ with open('mythical', 'r', encoding='utf8') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
+client = commands.Bot(command_prefix="!")
 
-# ✅ Selfbot setup: no intents needed
-client = commands.Bot(command_prefix="!", self_bot=True)
-
-# --- Subreddit Pools (unchanged) ---
+# --- Subreddit Pools ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -51,39 +50,57 @@ nsfw_pool = [
     "chickswithtattoos", "PetiteGoneWild", "cumsluts", "thick",
     "nsfwbikinis", "OnOff", "smalltits", "BigBoobsGW", "HighResNSFW",
     "GirlsFinishingTheJob", "palegirls", "TheUnderbun", "workgonewild",
-    "justthetip", "60fpsporn", "porninfifteenseconds",
-    "cuckold", "anal", "blowjobsandwich", "tightdresses", "leggingsgonewild",
+    "justthetip", "60fpsporn", "porninfifteenseconds", "cuckold",
+    "anal", "blowjobsandwich", "tightdresses", "leggingsgonewild",
     "SuicideGirls", "nsfwoutfits", "ToplessInJeans", "publicplug",
-    "workoutgonewild", "Hotwife", "MomsGoneWild", "milf", "hotchickswithtattoos",
-    "nsfwcosplay", "BDSMGW", "pussy", "squirting_gifs",
-    "thickwhitegirls", "slutwife", "PornStars", "PerfectPussies",
-    "SexyGirlsInBoots", "Blonde", "nsfwart", "rearpussy", "MatureMilfs",
-    "analgw", "thickasses", "Stacked", "Assholes", "GirlsWithBigToys",
-    "O_Faces", "GirlsInYogaPants"
+    "workoutgonewild", "Hotwife", "MomsGoneWild", "milf",
+    "hotchickswithtattoos", "nsfwcosplay", "BDSMGW", "pussy",
+    "squirting_gifs", "thickwhitegirls", "slutwife", "PornStars",
+    "PerfectPussies", "SexyGirlsInBoots", "Blonde", "nsfwart",
+    "rearpussy", "MatureMilfs", "analgw", "thickasses", "Stacked",
+    "Assholes", "GirlsWithBigToys", "O_Faces", "GirlsInYogaPants",
+
+    # New Additions
+    "NSFW_GIF", "TrueAmateurs", "AltGoneWild", "brunette",
+    "redheads", "legalteensxxx", "fitgirls", "boobies",
+    "asstastic", "NSFWVideos", "DeepThroat", "gonewildcurvy",
+    "DirtyGaming", "nsfw_college", "facials", "hugeboobs",
+    "Upskirt", "ThickFit", "NSFWFunny", "hairypussy",
+    "NaughtyWives", "cumcovered", "ebony", "Latinas",
+    "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild"
 ]
 
 hentai_pool = [
     "hentai", "rule34", "AnimeBooty", "thick_hentai", "ahegao",
     "ecchi", "hentaibondage", "oppai_gif", "HQHentai", "HentaiGIF",
-    "NarutoHentai", "DragonBallHentai", "PokemonNSFW",
-    "DisneyNSFW", "OverwatchNSFW", "OnePieceHentai",
-    "AnimeArmpits", "BigAnimeTiddies", "MaidHentai", "MonsterGirls",
-    "hentai_gifs", "HentaiBlowjobs", "thighhighs", "animelegs",
-    "Tentai", "HentaiAnal", "futa", "UncensoredHentai", "YuriNSFW",
-    "AnimeMILFS", "WaifuPorn", "hentaiass", "ecchiGIFs",
-    "TouhouNSFW", "BDSMhentai", "DragonBallZNSFW", "NarutoRule34",
-    "FairyTailNSFW", "BleachNSFW", "DigimonNSFW", "HentaiThighs",
-    "HentaiPetgirls", "LeagueOfLegendsNSFW", "GenshinImpactNSFW",
-    "SailorMoonNSFW", "EvangelionNSFW", "FateHentai",
-    "OverwatchHentai", "RWBYNSFW", "AvatarNSFW", "KantaiCollectionNSFW",
-    "ReZeroNSFW", "KonosubaNSFW", "MyHeroHentai", "DemonSlayerHentai",
-    "OnePunchManNSFW", "AttackOnTitanNSFW", "InuyashaNSFW",
-    "CodeGeassNSFW", "BlackCloverNSFW", "BorutoHentai",
-    "YuGiOhNSFW", "KillLaKillNSFW", "PersonaNSFW", "NierNSFW",
-    "FinalFantasyNSFW", "DisneyHentai", "CartoonHentai",
-    "GravityFallsNSFW", "KimPossibleNSFW", "TeenTitansNSFW",
-    "ScoobyDooNSFW", "LooneyTunesNSFW", "RegularShowNSFW",
-    "TotalDramaNSFW", "DannyPhantomNSFW", "PhineasAndFerbNSFW"
+    "NarutoHentai", "DragonBallHentai", "PokemonNSFW", "DisneyNSFW",
+    "OverwatchNSFW", "OnePieceHentai", "AnimeArmpits", "BigAnimeTiddies",
+    "MaidHentai", "MonsterGirls", "hentai_gifs", "HentaiBlowjobs",
+    "thighhighs", "animelegs", "Tentai", "HentaiAnal", "futa",
+    "UncensoredHentai", "YuriNSFW", "AnimeMILFS", "WaifuPorn",
+    "hentaiass", "ecchiGIFs", "TouhouNSFW", "BDSMhentai",
+    "DragonBallZNSFW", "NarutoRule34", "FairyTailNSFW", "BleachNSFW",
+    "DigimonNSFW", "HentaiThighs", "HentaiPetgirls",
+    "LeagueOfLegendsNSFW", "GenshinImpactNSFW", "SailorMoonNSFW",
+    "EvangelionNSFW", "FateHentai", "OverwatchHentai", "RWBYNSFW",
+    "AvatarNSFW", "KantaiCollectionNSFW", "ReZeroNSFW", "KonosubaNSFW",
+    "MyHeroHentai", "DemonSlayerHentai", "OnePunchManNSFW",
+    "AttackOnTitanNSFW", "InuyashaNSFW", "CodeGeassNSFW",
+    "BlackCloverNSFW", "BorutoHentai", "YuGiOhNSFW", "KillLaKillNSFW",
+    "PersonaNSFW", "NierNSFW", "FinalFantasyNSFW", "DisneyHentai",
+    "CartoonHentai", "GravityFallsNSFW", "KimPossibleNSFW",
+    "TeenTitansNSFW", "ScoobyDooNSFW", "LooneyTunesNSFW",
+    "RegularShowNSFW", "TotalDramaNSFW", "DannyPhantomNSFW",
+    "PhineasAndFerbNSFW",
+
+    # New Additions
+    "ecchibabes", "rule34cartoons", "LewdAnimeGirls",
+    "OppaiHentai", "AnimeNsfw", "BunnyGirlsNSFW",
+    "WaifuNsfw", "HentaiHQ", "AnimeEcchi", "nsfwanimegifs",
+    "EcchiHentai", "HentaiCouples", "ShotaHentai",
+    "MonsterGirlNSFW", "DoujinHentai", "HentaiThicc",
+    "UncensoredEcchi", "LewdHentai", "AnimeNSFW",
+    "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus"
 ]
 
 # --- Safe Poketwo spam loop ---
@@ -107,7 +124,7 @@ async def before_poketwo_spam():
 # --- On ready ---
 @client.event
 async def on_ready():
-    print(f'✅ Logged in as {client.user}')
+    print(f'✅ Logged in as {client.user.name}')
     poketwo_spam_loop.start()
     asyncio.create_task(self_ping_loop())
 
@@ -117,8 +134,8 @@ async def self_ping_loop():
     async with aiohttp.ClientSession() as session:
         while True:
             try:
-                async with session.get(service_url) as r:
-                    print(f"Pinged {service_url} - status: {r.status}")
+                async with session.get(service_url) as resp:
+                    print(f"Pinged {service_url} - status: {resp.status}")
             except Exception as e:
                 print(f"Error pinging self: {e}")
             await asyncio.sleep(600)
@@ -156,7 +173,7 @@ async def get_filtered_posts(subreddit_name, content_type, limit=50):
         print(f"[Reddit Error] Failed in r/{subreddit_name}: {e}")
     return posts
 
-# --- Commands (same as before) ---
+# --- NSFW Commands ---
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
     if not ctx.channel.is_nsfw():
@@ -184,6 +201,7 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
             await ctx.send(url)
     else:
         await ctx.send("❌ No posts found.")
+        print(f"[r] No results for type {content_type}")
 
 @client.command()
 async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
@@ -213,7 +231,9 @@ async def random(ctx):
         await ctx.send(pyrandom.choice(posts))
     else:
         await ctx.send("❌ No posts found.")
+        print(f"[random] No posts for r/{subreddit} type={ctype}")
 
+# --- Auto System ---
 auto_tasks = {}
 
 @client.command()
@@ -240,18 +260,20 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
             posts = await get_filtered_posts(subreddit, ctype)
             if posts:
                 await channel.send(pyrandom.choice(posts))
+            else:
+                print(f"[auto] No posts in r/{subreddit} type={ctype}")
             await asyncio.sleep(seconds)
 
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
+    await ctx.send(f"▶️ Auto started in this channel every {seconds}s for {content_type}.")
 
 @client.command()
 async def autostop(ctx):
     global auto_tasks
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
         auto_tasks[ctx.channel.id].cancel()
-        await ctx.send("⏹️ Auto stopped.")
+        await ctx.send("⏹️ Auto stopped in this channel.")
     else:
         await ctx.send("⚠️ Auto was not running here.")
 
@@ -265,7 +287,14 @@ def home():
 def run_server():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
+# Start Flask server in a thread
 threading.Thread(target=run_server).start()
 
 # --- Run bot ---
-client.run(user_token)
+while True:
+    try:
+        client.run(user_token)
+    except Exception as e:
+        print(f"Bot crashed: {e}. Restarting in 10 seconds...")
+        asyncio.sleep(10)
+        
