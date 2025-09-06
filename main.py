@@ -1,17 +1,15 @@
 import os
 import sys
-import re
 import asyncio
 import random as pyrandom
 import discord
 from discord.ext import commands, tasks
 import threading
 from flask import Flask
-import requests
-import time
-import praw
+import aiohttp
+import asyncpraw
 
-version = 'v3.4'
+version = 'v3.5'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -27,8 +25,8 @@ if not spam_id:
 if not service_url:
     service_url = "https://working-1-uy7j.onrender.com"
 
-# --- Reddit API setup (hardcoded) ---
-reddit = praw.Reddit(
+# --- Reddit API setup (asyncpraw) ---
+reddit = asyncpraw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
     user_agent="NsfwDiscordBot/1.0"
@@ -41,9 +39,11 @@ with open('mythical', 'r', encoding='utf8') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
-client = commands.Bot(command_prefix="!")
+intents = discord.Intents.default()
+intents.message_content = True
+client = commands.Bot(command_prefix="!", intents=intents)
 
-# --- Subreddit Pools ---
+# --- Subreddit Pools (unchanged) ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -111,35 +111,34 @@ async def on_ready():
     poketwo_spam_loop.start()
     asyncio.create_task(self_ping_loop())
 
-# --- Self-ping loop ---
+# --- Self-ping loop (async with aiohttp) ---
 async def self_ping_loop():
     await client.wait_until_ready()
-    while True:
-        try:
-            r = requests.get(service_url)
-            print(f"Pinged {service_url} - status: {r.status_code}")
-        except Exception as e:
-            print(f"Error pinging self: {e}")
-        await asyncio.sleep(600)
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(service_url) as r:
+                    print(f"Pinged {service_url} - status: {r.status}")
+            except Exception as e:
+                print(f"Error pinging self: {e}")
+            await asyncio.sleep(600)
 
-# --- NSFW helpers ---
-def get_filtered_posts(subreddit_name, content_type, limit=50):
+# --- NSFW helpers (asyncpraw) ---
+async def get_filtered_posts(subreddit_name, content_type, limit=50):
     posts = []
     try:
-        subreddit = reddit.subreddit(subreddit_name)
-        for post in subreddit.hot(limit=limit):
+        subreddit = await reddit.subreddit(subreddit_name)
+        async for post in subreddit.hot(limit=limit):
             if post.stickied:
                 continue
             url = str(post.url)
 
-            # --- image ---
             if content_type == "img" and (
                 url.endswith((".jpg", ".jpeg", ".png"))
                 or "i.redd.it" in url or "preview.redd.it" in url
             ):
                 posts.append(url)
 
-            # --- gif ---
             elif content_type == "gif" and (
                 url.endswith(".gif")
                 or "gfycat" in url or "redgifs" in url
@@ -147,7 +146,6 @@ def get_filtered_posts(subreddit_name, content_type, limit=50):
             ):
                 posts.append(url)
 
-            # --- video ---
             elif content_type == "vid" and (
                 url.endswith(".mp4")
                 or "v.redd.it" in url
@@ -176,7 +174,7 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
     results = []
     for _ in range(amount * 4):  # oversample
         subreddit = pyrandom.choice(pool)
-        posts = get_filtered_posts(subreddit, content_type)
+        posts = await get_filtered_posts(subreddit, content_type)
         if posts:
             results.append(pyrandom.choice(posts))
         if len(results) >= amount:
@@ -198,7 +196,7 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     if amount > 10:
         await ctx.send("⚠️ Max 10 posts at once.")
         return
-    posts = get_filtered_posts(subreddit, content_type)
+    posts = await get_filtered_posts(subreddit, content_type)
     if posts:
         for url in posts[:amount]:
             await ctx.send(url)
@@ -214,7 +212,7 @@ async def random(ctx):
     pool = nsfw_pool + hentai_pool
     subreddit = pyrandom.choice(pool)
     ctype = pyrandom.choice(["img", "gif", "vid"])
-    posts = get_filtered_posts(subreddit, ctype)
+    posts = await get_filtered_posts(subreddit, ctype)
     if posts:
         await ctx.send(pyrandom.choice(posts))
     else:
@@ -246,7 +244,7 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
             subreddit = pyrandom.choice(pool)
-            posts = get_filtered_posts(subreddit, ctype)
+            posts = await get_filtered_posts(subreddit, ctype)
             if posts:
                 await channel.send(pyrandom.choice(posts))
             else:
@@ -276,13 +274,9 @@ def home():
 def run_server():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
+# --- Start Flask in background ---
 threading.Thread(target=run_server).start()
 
 # --- Run bot ---
-while True:
-    try:
-        client.run(user_token)
-    except Exception as e:
-        print(f"Bot crashed: {e}. Restarting in 10 seconds...")
-        time.sleep(10)
+client.run(user_token)
         
