@@ -11,7 +11,7 @@ import aiohttp
 import asyncpraw
 import time
 
-version = 'v3.5'
+version = 'v3.6'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -60,8 +60,6 @@ nsfw_pool = [
     "PerfectPussies", "SexyGirlsInBoots", "Blonde", "nsfwart",
     "rearpussy", "MatureMilfs", "analgw", "thickasses", "Stacked",
     "Assholes", "GirlsWithBigToys", "O_Faces", "GirlsInYogaPants",
-
-    # New Additions
     "NSFW_GIF", "TrueAmateurs", "AltGoneWild", "brunette",
     "redheads", "legalteensxxx", "fitgirls", "boobies",
     "asstastic", "NSFWVideos", "DeepThroat", "gonewildcurvy",
@@ -92,19 +90,15 @@ hentai_pool = [
     "CartoonHentai", "GravityFallsNSFW", "KimPossibleNSFW",
     "TeenTitansNSFW", "ScoobyDooNSFW", "LooneyTunesNSFW",
     "RegularShowNSFW", "TotalDramaNSFW", "DannyPhantomNSFW",
-    "PhineasAndFerbNSFW",
-
-    # New Additions
-    "ecchibabes", "rule34cartoons", "LewdAnimeGirls",
-    "OppaiHentai", "AnimeNsfw", "BunnyGirlsNSFW",
+    "PhineasAndFerbNSFW", "ecchibabes", "rule34cartoons",
+    "LewdAnimeGirls", "OppaiHentai", "AnimeNsfw", "BunnyGirlsNSFW",
     "WaifuNsfw", "HentaiHQ", "AnimeEcchi", "nsfwanimegifs",
-    "EcchiHentai", "HentaiCouples", "ShotaHentai",
-    "MonsterGirlNSFW", "DoujinHentai", "HentaiThicc",
-    "UncensoredEcchi", "LewdHentai", "AnimeNSFW",
-    "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus"
+    "EcchiHentai", "HentaiCouples", "ShotaHentai", "MonsterGirlNSFW",
+    "DoujinHentai", "HentaiThicc", "UncensoredEcchi", "LewdHentai",
+    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus"
 ]
 
-# --- Safe Poketwo spam loop ---
+# --- Poketwo spam loop ---
 @tasks.loop(seconds=10)
 async def poketwo_spam_loop():
     channel = client.get_channel(int(spam_id))
@@ -149,24 +143,44 @@ async def get_filtered_posts(subreddit_name, content_type, limit=50):
         async for post in subreddit.hot(limit=limit):
             if post.stickied:
                 continue
+
             url = str(post.url)
+            print(f"[DEBUG] r/{subreddit_name} -> {url}")  # debug
 
+            # Handle Reddit galleries
+            if getattr(post, "is_gallery", False):
+                if content_type == "img":
+                    try:
+                        items = post.gallery_data["items"]
+                        for item in items:
+                            media_id = item["media_id"]
+                            if media_id in post.media_metadata:
+                                img = post.media_metadata[media_id]
+                                img_url = img["s"]["u"]
+                                posts.append(img_url)
+                    except Exception as e:
+                        print(f"[Gallery Error] {e}")
+                continue
+
+            # --- image ---
             if content_type == "img" and (
-                url.endswith((".jpg", ".jpeg", ".png"))
-                or "i.redd.it" in url or "preview.redd.it" in url
+                url.endswith((".jpg", ".jpeg", ".png", ".webp"))
+                or any(x in url for x in ["i.redd.it", "preview.redd.it", "imgur.com"])
             ):
                 posts.append(url)
 
+            # --- gif ---
             elif content_type == "gif" and (
-                url.endswith(".gif")
-                or "gfycat" in url or "redgifs" in url
-                or url.endswith(".gifv")
+                url.endswith((".gif", ".gifv"))
+                or any(x in url for x in ["gfycat", "redgifs", "imgur.com"])
             ):
                 posts.append(url)
 
+            # --- video ---
             elif content_type == "vid" and (
                 url.endswith(".mp4")
                 or "v.redd.it" in url
+                or "redgifs" in url
             ):
                 posts.append(url)
 
@@ -202,7 +216,6 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
             await ctx.send(url)
     else:
         await ctx.send("❌ No posts found.")
-        print(f"[r] No results for type {content_type}")
 
 @client.command()
 async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
@@ -232,7 +245,6 @@ async def random(ctx):
         await ctx.send(pyrandom.choice(posts))
     else:
         await ctx.send("❌ No posts found.")
-        print(f"[random] No posts for r/{subreddit} type={ctype}")
 
 # --- Auto System ---
 auto_tasks = {}
@@ -261,8 +273,6 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
             posts = await get_filtered_posts(subreddit, ctype)
             if posts:
                 await channel.send(pyrandom.choice(posts))
-            else:
-                print(f"[auto] No posts in r/{subreddit} type={ctype}")
             await asyncio.sleep(seconds)
 
     task = asyncio.create_task(auto_loop(ctx.channel))
