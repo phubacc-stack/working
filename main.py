@@ -11,7 +11,7 @@ import requests
 import time
 import praw
 
-version = 'v2.8'
+version = 'v3.0'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -104,7 +104,7 @@ async def on_ready():
     spam.start()
     asyncio.create_task(self_ping_loop())
 
-# --- Self-ping loop to keep Render alive ---
+# --- Self-ping loop ---
 async def self_ping_loop():
     await client.wait_until_ready()
     while True:
@@ -115,7 +115,7 @@ async def self_ping_loop():
             print(f"Error pinging self: {e}")
         await asyncio.sleep(600)
 
-# --- Discord on_message ---
+# --- on_message ---
 @client.event
 async def on_message(message):
     if message.author.id == poketwo and message.channel.category:
@@ -196,29 +196,59 @@ async def reboot(ctx):
 async def pause(ctx):
     spam.cancel()
 
+# --- Reddit helpers ---
+async def send_reddit_post(ctx, post):
+    try:
+        if post.url.endswith((".jpg", ".png", ".jpeg", ".gif")):
+            await ctx.send(post.url)
+        elif "v.redd.it" in post.url or post.url.endswith(".mp4"):
+            try:
+                video = requests.get(post.url, stream=True, timeout=10)
+                if int(video.headers.get("Content-Length", 0)) < 8 * 1024 * 1024:
+                    with open("temp.mp4", "wb") as f:
+                        for chunk in video.iter_content(chunk_size=1024):
+                            f.write(chunk)
+                    await ctx.send(file=discord.File("temp.mp4"))
+                    os.remove("temp.mp4")
+                else:
+                    await ctx.send("⚠️ Video too large to upload (>8MB).")
+            except Exception as e:
+                await ctx.send(f"⚠️ Failed to fetch video: {e}")
+        else:
+            await ctx.send(post.url)  # fallback
+    except Exception as e:
+        await ctx.send(f"❌ Error sending post: {e}")
+
+def filter_posts(posts, media_type):
+    if media_type == "img":
+        return [p for p in posts if p.url.endswith((".jpg", ".png", ".jpeg", ".gif"))]
+    elif media_type == "vid":
+        return [p for p in posts if "v.redd.it" in p.url or p.url.endswith(".mp4")]
+    return posts
+
 # --- NSFW Reddit Commands ---
-@client.command()
-async def redditnsfw(ctx, subreddit_name: str = "nsfw"):
-    """Fetch a random NSFW post from a specific subreddit."""
+@client.command(name="r")
+async def reddit_cmd(ctx, subreddit_name: str, media_type: str = None, limit: int = 1):
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ This command can only be used in NSFW channels.")
         return
 
     try:
         subreddit = reddit.subreddit(subreddit_name)
-        posts = [post for post in subreddit.hot(limit=50) if not post.stickied]
+        posts = [p for p in subreddit.hot(limit=100) if not p.stickied]
+        posts = filter_posts(posts, media_type)
         if not posts:
             await ctx.send(f"❌ No posts found in r/{subreddit_name}.")
             return
 
-        post = random.choice(posts)
-        await ctx.send(post.url)
+        for _ in range(min(limit, 5)):
+            post = random.choice(posts)
+            await send_reddit_post(ctx, post)
     except Exception as e:
         await ctx.send(f"❌ Failed to fetch from r/{subreddit_name}: {e}")
 
-@client.command()
-async def randomnsfw(ctx):
-    """Fetch a random NSFW post from a default pool of subreddits."""
+@client.command(name="rr")
+async def random_reddit(ctx, media_type: str = None, limit: int = 1):
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ This command can only be used in NSFW channels.")
         return
@@ -226,17 +256,19 @@ async def randomnsfw(ctx):
     subreddits = ["nsfw", "gonewild", "rule34", "porn", "RealGirls", "trainerfucks"]
     try:
         subreddit = reddit.subreddit(random.choice(subreddits))
-        posts = [post for post in subreddit.hot(limit=50) if not post.stickied]
+        posts = [p for p in subreddit.hot(limit=100) if not p.stickied]
+        posts = filter_posts(posts, media_type)
         if not posts:
             await ctx.send("❌ No posts found.")
             return
 
-        post = random.choice(posts)
-        await ctx.send(post.url)
+        for _ in range(min(limit, 5)):
+            post = random.choice(posts)
+            await send_reddit_post(ctx, post)
     except Exception as e:
         await ctx.send(f"❌ Failed to fetch post: {e}")
 
-# --- Flask server for uptime ---
+# --- Flask server ---
 app = Flask("")
 
 @app.route("/")
@@ -246,9 +278,10 @@ def home():
 def run_server():
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
+
 threading.Thread(target=run_server).start()
 
-# --- Run bot with auto-restart ---
+# --- Run bot ---
 while True:
     try:
         client.run(user_token)
