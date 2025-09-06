@@ -9,6 +9,7 @@ import threading
 from flask import Flask
 import aiohttp
 import asyncpraw
+import time
 
 version = 'v3.5'
 
@@ -296,5 +297,5 @@ while True:
         client.run(user_token)
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10 seconds...")
-        asyncio.sleep(10)
+        time.sleep(10)
         
