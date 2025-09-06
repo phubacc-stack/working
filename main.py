@@ -4,14 +4,14 @@ import re
 import asyncio
 import random
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import threading
 from flask import Flask
 import requests
 import time
 import praw
 
-version = 'v3.0'
+version = 'v3.1-fixed'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -91,10 +91,7 @@ hentai_pool = [
     "TotalDramaNSFW", "DannyPhantomNSFW", "PhineasAndFerbNSFW"
 ]
 
-# --- Spam intervals ---
-intervals = [3.6, 2.8, 3.0, 3.2, 3.4]
-
-# --- Solve hints ---
+# --- Solve hints for Pokétwo ---
 def solve(message, file_name):
     hint = [c for c in message[15:-1] if c != '\\']
     hint_string = ''.join(hint).replace('_', '.')
@@ -121,25 +118,22 @@ async def send_message_safe(channel, content):
             print(f"Unexpected error: {e}. Retrying in 60 seconds...")
             await asyncio.sleep(60)
 
-# --- Spam loop ---
-@tasks.loop(seconds=random.choice(intervals))
-async def spam():
+# --- Pokétwo spam (manual loop instead of @tasks.loop) ---
+async def poketwo_spam_loop():
     channel = client.get_channel(int(spam_id))
     if not channel:
-        print("Channel not found.")
+        print("Channel not found for spam.")
         return
-    message_content = ''.join(random.sample('1234567890', 7) * 5)
-    await send_message_safe(channel, message_content)
-
-@spam.before_loop
-async def before_spam():
-    await client.wait_until_ready()
+    while True:
+        message_content = ''.join(random.sample('1234567890', 7) * 5)
+        await send_message_safe(channel, message_content)
+        await asyncio.sleep(random.choice([2.8, 3.0, 3.2, 3.4, 3.6]))
 
 # --- On ready ---
 @client.event
 async def on_ready():
     print(f'Logged into account: {client.user.name}')
-    spam.start()
+    asyncio.create_task(poketwo_spam_loop())
     asyncio.create_task(self_ping_loop())
 
 # --- Self-ping loop ---
@@ -152,38 +146,6 @@ async def self_ping_loop():
         except Exception as e:
             print(f"Error pinging self: {e}")
         await asyncio.sleep(600)
-
-# --- Move to category ---
-async def move_to_category(channel, solution, base_category_name, guild, max_channels=48, max_categories=5):
-    for i in range(1, max_categories + 1):
-        category_name = f"{base_category_name} {i}" if i > 1 else base_category_name
-        category = discord.utils.get(guild.categories, name=category_name)
-        if category is None:
-            category = await guild.create_category(category_name)
-        if len(category.channels) < max_channels:
-            await channel.edit(
-                name=solution.lower().replace(' ', '-'),
-                category=category,
-                sync_permissions=True,
-            )
-            return
-
-# --- Commands ---
-@client.command()
-async def report(ctx, *, args):
-    await ctx.send(args)
-
-@client.command()
-async def reboot(ctx):
-    if spam.is_running():
-        spam.cancel()
-        await ctx.send("Spam loop stopped.")
-    spam.start()
-    await ctx.send("Spam loop restarted.")
-
-@client.command()
-async def pause(ctx):
-    spam.cancel()
 
 # --- NSFW helpers ---
 def get_filtered_posts(subreddit_name, content_type, limit=50):
@@ -216,7 +178,7 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
 
     pool = nsfw_pool + hentai_pool
     results = []
-    for _ in range(amount * 3):  # oversample for safety
+    for _ in range(amount * 3):  # oversample
         subreddit = random.choice(pool)
         posts = get_filtered_posts(subreddit, content_type)
         if posts:
