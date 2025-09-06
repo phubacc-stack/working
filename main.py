@@ -10,7 +10,7 @@ from flask import Flask
 import requests
 import time
 
-version = 'v2.8'
+version = 'v2.8-self'
 
 # --- Environment Variables ---
 user_token = os.getenv("user_token")
@@ -35,7 +35,9 @@ with open('mythical', 'r', encoding='utf8') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
-client = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
+# NOTE: self-bot fork does not need Intents
+client = commands.Bot(command_prefix="!")
 
 # Spam intervals
 intervals = [3.6, 2.8, 3.0, 3.2, 3.4]
