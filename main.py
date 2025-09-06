@@ -9,10 +9,11 @@ import threading
 from flask import Flask
 import requests
 import time
+import praw
 
-version = 'v2.8-self'
+version = 'v2.8'
 
-# --- Environment Variables ---
+# --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
 spam_id = os.getenv("spam_id")
 service_url = os.getenv("SERVICE_URL")  # Optional: Render URL for self-ping
@@ -28,6 +29,17 @@ if not spam_id:
 if not service_url:
     service_url = "https://working-1-uy7j.onrender.com"  # fallback
 
+# --- Reddit API setup (hardcoded) ---
+reddit_client_id = "lQ_-b50YbnuDiL_uC6B7OQ"
+reddit_client_secret = "1GqXW2xEWOGjqMl2lNacWdOc4tt9YA"
+reddit_user_agent = "NsfwDiscordBot/1.0"
+
+reddit = praw.Reddit(
+    client_id=reddit_client_id,
+    client_secret=reddit_client_secret,
+    user_agent=reddit_user_agent
+)
+
 # --- Read Files ---
 with open('pokemon', 'r', encoding='utf8') as file:
     pokemon_list = file.read()
@@ -35,8 +47,6 @@ with open('mythical', 'r', encoding='utf8') as file:
     mythical_list = file.read()
 
 poketwo = 716390085896962058
-
-# NOTE: self-bot fork does not need Intents
 client = commands.Bot(command_prefix="!")
 
 # Spam intervals
@@ -56,7 +66,7 @@ async def send_message_safe(channel, content):
     while True:
         try:
             await channel.send(content)
-            break  # message sent successfully
+            break
         except discord.errors.HTTPException as e:
             if e.status == 429:
                 retry_after = getattr(e, 'retry_after', 5)
@@ -103,7 +113,7 @@ async def self_ping_loop():
             print(f"Pinged {service_url} - status: {r.status_code}")
         except Exception as e:
             print(f"Error pinging self: {e}")
-        await asyncio.sleep(600)  # ping every 10 minutes
+        await asyncio.sleep(600)
 
 # --- Discord on_message ---
 @client.event
@@ -149,7 +159,6 @@ async def on_message(message):
                             guild=message.guild
                         )
                         await cloned_channel.send('<@716390085896962058> redirect 1 2 3 4 5 6 ')
-    # Make sure commands are processed
     await client.process_commands(message)
 
 # --- Move to category ---
@@ -187,33 +196,45 @@ async def reboot(ctx):
 async def pause(ctx):
     spam.cancel()
 
-# --- NEW: Reddit NSFW commands ---
+# --- NSFW Reddit Commands ---
 @client.command()
-async def redditnsfw(ctx, subreddit: str = "trainerfucks"):
-    """Fetch a random NSFW post from a subreddit"""
-    try:
-        headers = {"User-Agent": "DiscordBot/1.0"}
-        url = f"https://www.reddit.com/r/{subreddit}/random/.json?limit=1"
-        response = requests.get(url, headers=headers, timeout=10)
+async def redditnsfw(ctx, subreddit_name: str = "nsfw"):
+    """Fetch a random NSFW post from a specific subreddit."""
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ This command can only be used in NSFW channels.")
+        return
 
-        if response.status_code != 200:
-            await ctx.send(f"Failed to fetch from r/{subreddit}.")
+    try:
+        subreddit = reddit.subreddit(subreddit_name)
+        posts = [post for post in subreddit.hot(limit=50) if not post.stickied]
+        if not posts:
+            await ctx.send(f"❌ No posts found in r/{subreddit_name}.")
             return
 
-        data = response.json()
-        post = data[0]["data"]["children"][0]["data"]
-
-        title = post["title"]
-        image_url = post.get("url")
-
-        await ctx.send(f"**{title}**\n{image_url}")
+        post = random.choice(posts)
+        await ctx.send(post.url)
     except Exception as e:
-        await ctx.send(f"Error: {e}")
+        await ctx.send(f"❌ Failed to fetch from r/{subreddit_name}: {e}")
 
 @client.command()
 async def randomnsfw(ctx):
-    """Fetch a random NSFW post from r/trainerfucks"""
-    await redditnsfw(ctx, "trainerfucks")
+    """Fetch a random NSFW post from a default pool of subreddits."""
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ This command can only be used in NSFW channels.")
+        return
+
+    subreddits = ["nsfw", "gonewild", "rule34", "porn", "RealGirls", "trainerfucks"]
+    try:
+        subreddit = reddit.subreddit(random.choice(subreddits))
+        posts = [post for post in subreddit.hot(limit=50) if not post.stickied]
+        if not posts:
+            await ctx.send("❌ No posts found.")
+            return
+
+        post = random.choice(posts)
+        await ctx.send(post.url)
+    except Exception as e:
+        await ctx.send(f"❌ Failed to fetch post: {e}")
 
 # --- Flask server for uptime ---
 app = Flask("")
@@ -234,4 +255,4 @@ while True:
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10 seconds...")
         time.sleep(10)
-        
+    
