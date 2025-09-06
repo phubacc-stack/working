@@ -2,7 +2,7 @@ import os
 import sys
 import re
 import asyncio
-import random as pyrandom  # fixed bug
+import random as pyrandom
 import discord
 from discord.ext import commands, tasks
 import threading
@@ -11,23 +11,21 @@ import requests
 import time
 import praw
 
-version = 'v3.3'
+version = 'v3.4'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
 spam_id = os.getenv("spam_id")
-service_url = os.getenv("SERVICE_URL")  # Optional: Render URL for self-ping
+service_url = os.getenv("SERVICE_URL")
 
 if not user_token:
     print("[ERROR] Missing environment variable: user_token")
     sys.exit(1)
-
 if not spam_id:
     print("[ERROR] Missing environment variable: spam_id")
     sys.exit(1)
-
 if not service_url:
-    service_url = "https://working-1-uy7j.onrender.com"  # fallback
+    service_url = "https://working-1-uy7j.onrender.com"
 
 # --- Reddit API setup (hardcoded) ---
 reddit = praw.Reddit(
@@ -160,7 +158,7 @@ def get_filtered_posts(subreddit_name, content_type, limit=50):
         print(f"[Reddit Error] Failed in r/{subreddit_name}: {e}")
     return posts
 
-# --- Commands ---
+# --- NSFW Commands ---
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
     """Usage: !r <amount> <type> (type = img | gif | vid)"""
@@ -192,6 +190,22 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
         print(f"[r] No results for type {content_type}")
 
 @client.command()
+async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
+    """Usage: !rsub <subreddit> <amount> <type>"""
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
+        return
+    if amount > 10:
+        await ctx.send("⚠️ Max 10 posts at once.")
+        return
+    posts = get_filtered_posts(subreddit, content_type)
+    if posts:
+        for url in posts[:amount]:
+            await ctx.send(url)
+    else:
+        await ctx.send(f"❌ No posts found in r/{subreddit}.")
+
+@client.command()
 async def random(ctx):
     """Usage: !random (fetches random img/gif/vid)"""
     if not ctx.channel.is_nsfw():
@@ -207,48 +221,50 @@ async def random(ctx):
         await ctx.send("❌ No posts found.")
         print(f"[random] No posts for r/{subreddit} type={ctype}")
 
-auto_task = None
+# --- Auto System ---
+auto_tasks = {}
 
 @client.command()
 async def auto(ctx, seconds: int = 30, content_type: str = "img"):
-    """Usage: !auto <seconds> <type> (type = img | gif | vid | random)"""
-    global auto_task
+    """Usage: !auto <seconds> <type>"""
+    global auto_tasks
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
-    if seconds < 10:
-        await ctx.send("⚠️ Minimum is 10 seconds.")
+    if seconds < 5:
+        await ctx.send("⚠️ Minimum is 5 seconds.")
         return
     if content_type not in ["img", "gif", "vid", "random"]:
         await ctx.send("⚠️ Type must be one of: img, gif, vid, random.")
         return
-    if auto_task and not auto_task.done():
-        await ctx.send("⚠️ Auto already running.")
+    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+        await ctx.send("⚠️ Auto already running in this channel.")
         return
 
-    async def auto_loop():
+    async def auto_loop(channel):
         while True:
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
             subreddit = pyrandom.choice(pool)
             posts = get_filtered_posts(subreddit, ctype)
             if posts:
-                await ctx.send(pyrandom.choice(posts))
+                await channel.send(pyrandom.choice(posts))
             else:
                 print(f"[auto] No posts in r/{subreddit} type={ctype}")
             await asyncio.sleep(seconds)
 
-    auto_task = asyncio.create_task(auto_loop())
-    await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
+    task = asyncio.create_task(auto_loop(ctx.channel))
+    auto_tasks[ctx.channel.id] = task
+    await ctx.send(f"▶️ Auto started in this channel every {seconds}s for {content_type}.")
 
 @client.command()
 async def autostop(ctx):
-    global auto_task
-    if auto_task and not auto_task.done():
-        auto_task.cancel()
-        await ctx.send("⏹️ Auto stopped.")
+    global auto_tasks
+    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+        auto_tasks[ctx.channel.id].cancel()
+        await ctx.send("⏹️ Auto stopped in this channel.")
     else:
-        await ctx.send("⚠️ Auto was not running.")
+        await ctx.send("⚠️ Auto was not running here.")
 
 # --- Flask server ---
 app = Flask("")
