@@ -6,24 +6,17 @@ import discord
 from discord.ext import commands
 import threading
 from flask import Flask
+import requests
 import time
 import praw
 from datetime import datetime
-import logging
-from collections import defaultdict
 
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v7.0-self'
+version = 'v5.0-self'
 start_time = datetime.utcnow()
 post_counter = 0
-sub_usage_counter = defaultdict(int)
-last_posts = []  # store last sent posts
-
-# --- Logging ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("nsfwbot")
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -38,15 +31,13 @@ if not service_url:
 # --- Reddit API setup (praw) ---
 reddit = praw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
-    client_secret="1GqXW2xEWOGjqMl2LacWdOc4tt9YA",
-    user_agent="NsfwDiscordBot/1.0"
+    client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
+    user_agent="NsfwDiscordBot/2.0"
 )
 
-intents = discord.Intents.default()
-intents.message_content = True
-client = commands.Bot(command_prefix="!", intents=intents)
+client = commands.Bot(command_prefix="!")  # no intents needed for selfbot
 
-# --- Pools ---
+# --- Subreddit Pools (expanded, not reduced) ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -73,9 +64,9 @@ nsfw_pool = [
     "trainerfucks", "AmateurPorn", "Exxxtras", "BustyNaturals",
     "TittyDrop", "TheGape", "WorkGoneWild", "Nudes", "Rule34LoL",
     "NotSafeForWork", "LegalTeens",
+    # Added more
     "AmateurGirls", "NSFW_Wallpapers", "porn_gifs",
-    "RealAmateur", "TrueFucking", "homemadexxx",
-    "NSFW_Girls", "Tgirls", "NSFW_Snapchat2"
+    "RealAmateur", "TrueFucking", "homemadexxx"
 ]
 
 hentai_pool = [
@@ -107,15 +98,15 @@ hentai_pool = [
     "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
     "Rule34Cartoon", "EcchiParadise", "LewdCartoons", "AnimeThighs",
     "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch",
+    # Added more
     "HentaiEcchi", "LewdAnimeArt", "AnimeLewds",
-    "EcchiGirls", "HentaiArts", "EcchiCollections",
-    "NSFWHentaiArt", "LewdAnimeGirlsHQ", "ThiccAnime"
+    "EcchiGirls", "HentaiArts"
 ]
 
-# --- Cache ---
+# --- Cache for posts ---
 post_cache = {}
 
-def get_cached_posts(subreddit, content_type, limit=500):
+def get_cached_post(subreddit, content_type, limit=500):
     key = (subreddit, content_type)
     if key not in post_cache or not post_cache[key]:
         post_cache[key] = get_filtered_posts(subreddit, content_type, limit=limit)
@@ -123,10 +114,12 @@ def get_cached_posts(subreddit, content_type, limit=500):
         return post_cache[key].pop()
     return None
 
+# --- Helper: Get unique posts ---
 def get_filtered_posts(subreddit_name, content_type, limit=500):
     posts = []
     try:
         subreddit = reddit.subreddit(subreddit_name)
+
         fetch_method = pyrandom.choice(["hot", "new", "top"])
         if fetch_method == "hot":
             listings = subreddit.hot(limit=limit)
@@ -140,213 +133,241 @@ def get_filtered_posts(subreddit_name, content_type, limit=500):
                 continue
             url = str(post.url)
 
-            if content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url):
+            if content_type == "img" and (
+                url.endswith((".jpg", ".jpeg", ".png"))
+                or "i.redd.it" in url or "preview.redd.it" in url
+            ):
                 posts.append(url)
-            elif content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url):
+
+            elif content_type == "gif" and (
+                url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")
+            ):
                 posts.append(url)
-            elif content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url):
+
+            elif content_type == "vid" and (
+                url.endswith(".mp4") or "v.redd.it" in url
+            ):
                 posts.append(url)
 
         pyrandom.shuffle(posts)
 
     except Exception as e:
-        logger.error(f"[Reddit Error] r/{subreddit_name}: {e}")
+        print(f"[Reddit Error] r/{subreddit_name}: {e}")
     return posts
 
 # --- Commands ---
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
     """Usage: !r <amount> <type>"""
-    global post_counter, last_posts
+    global post_counter
     if not ctx.channel.is_nsfw():
-        return await ctx.send("⚠️ NSFW only command.")
+        await ctx.send("⚠️ NSFW only command.")
+        return
     if amount > 10:
-        return await ctx.send("⚠️ Max 10 posts at once.")
+        await ctx.send("⚠️ Max 10 posts at once.")
+        return
     if content_type not in ["img", "gif", "vid"]:
-        return await ctx.send("⚠️ Type must be img | gif | vid.")
+        await ctx.send("⚠️ Type must be img | gif | vid.")
+        return
 
     pool = nsfw_pool + hentai_pool
     results = []
     for _ in range(amount * 10):
         subreddit = pyrandom.choice(pool)
-        post = get_cached_posts(subreddit, content_type)
+        post = get_cached_post(subreddit, content_type)
         if post:
             results.append(post)
-            sub_usage_counter[subreddit] += 1
         if len(results) >= amount:
             break
 
     if results:
         post_counter += len(results[:amount])
-        last_posts = results[:amount]
         for url in results[:amount]:
             await ctx.send(url)
     else:
         await ctx.send("❌ No posts found.")
 
 @client.command()
+async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
+    """Usage: !rsub <subreddit> <amount> <type>"""
+    global post_counter
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
+        return
+    if amount > 10:
+        await ctx.send("⚠️ Max 10 posts at once.")
+        return
+    results = []
+    for _ in range(amount * 5):
+        post = get_cached_post(subreddit, content_type)
+        if post:
+            results.append(post)
+        if len(results) >= amount:
+            break
+
+    if results:
+        post_counter += len(results)
+        for url in results:
+            await ctx.send(url)
+    else:
+        await ctx.send(f"❌ No posts found in r/{subreddit}.")
+
+@client.command()
 async def batch(ctx, amount: int = 5, content_type: str = "img"):
-    global last_posts
+    """Send multiple posts in one message"""
     if not ctx.channel.is_nsfw():
         return await ctx.send("⚠️ NSFW only.")
+    if amount > 10:
+        return await ctx.send("⚠️ Max 10 at once.")
+
     pool = nsfw_pool + hentai_pool
-    posts = []
+    results = []
     for _ in range(amount * 10):
         subreddit = pyrandom.choice(pool)
-        post = get_cached_posts(subreddit, content_type)
+        post = get_cached_post(subreddit, content_type)
         if post:
-            posts.append(post)
-            sub_usage_counter[subreddit] += 1
-        if len(posts) >= amount:
+            results.append(post)
+        if len(results) >= amount:
             break
-    if posts:
-        last_posts = posts[:amount]
-        await ctx.send("\n".join(posts[:amount]))
+
+    if results:
+        await ctx.send("\n".join(results[:amount]))
     else:
         await ctx.send("❌ No posts found.")
 
 @client.command()
-async def search(ctx, keyword: str, amount: int = 3, content_type: str = "img"):
-    """Search Reddit for keyword"""
-    global last_posts
+async def random(ctx):
+    global post_counter
     if not ctx.channel.is_nsfw():
-        return await ctx.send("⚠️ NSFW only.")
-    results = []
-    try:
-        for post in reddit.subreddit("all").search(keyword, limit=500, sort="relevance"):
-            url = str(post.url)
-            if content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url):
-                results.append(url)
-            elif content_type == "gif" and (".gif" in url or "gfycat" in url or "redgifs" in url):
-                results.append(url)
-            elif content_type == "vid" and (".mp4" in url or "v.redd.it" in url):
-                results.append(url)
-            if len(results) >= amount:
-                break
-    except Exception as e:
-        return await ctx.send(f"⚠️ Search failed: {e}")
-    if results:
-        last_posts = results
-        await ctx.send("\n".join(results))
-    else:
-        await ctx.send("❌ No results found.")
-
-@client.command()
-async def last(ctx, amount: int = 3):
-    """Resend last posts"""
-    if not last_posts:
-        return await ctx.send("ℹ️ No posts saved yet.")
-    await ctx.send("\n".join(last_posts[:amount]))
-
-@client.command()
-async def randomsub(ctx):
-    sub = pyrandom.choice(nsfw_pool + hentai_pool)
-    post = get_cached_posts(sub, "img")
-    if post:
-        await ctx.send(f"🎲 r/{sub} → {post}")
-    else:
-        await ctx.send(f"❌ Couldn’t fetch from r/{sub}")
-
-@client.command()
-async def poolsize(ctx):
-    await ctx.send(f"📂 NSFW: {len(nsfw_pool)} subs | Hentai: {len(hentai_pool)} subs")
-
-@client.command()
-async def ping(ctx):
-    await ctx.send(f"🏓 Pong! Latency {round(client.latency*1000)}ms")
-
-# --- Auto Posting (same as before) ---
-auto_tasks = {}
-
-async def auto_loop(channel, seconds, content_type, mix=False):
+        await ctx.send("⚠️ NSFW only command.")
+        return
     pool = nsfw_pool + hentai_pool
-    try:
-        while True:
-            ctype = pyrandom.choice(["img", "gif", "vid"]) if (content_type == "random" or mix) else content_type
-            subreddit = pyrandom.choice(pool)
-            post = get_cached_posts(subreddit, ctype)
-            if post:
-                await channel.send(post)
-                sub_usage_counter[subreddit] += 1
-            await asyncio.sleep(seconds)
-    except asyncio.CancelledError:
-        await channel.send("⏹️ Auto stopped.")
-        raise
-    except Exception as e:
-        await channel.send(f"⚠️ Auto crashed: {e}")
+    subreddit = pyrandom.choice(pool)
+    ctype = pyrandom.choice(["img", "gif", "vid"])
+    post = get_cached_post(subreddit, ctype)
+    if post:
+        post_counter += 1
+        await ctx.send(post)
+    else:
+        await ctx.send("❌ No posts found.")
+
+@client.command()
+async def mix(ctx):
+    global post_counter
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
+        return
+    pool = nsfw_pool + hentai_pool
+    subreddit = pyrandom.choice(pool)
+    ctype = pyrandom.choice(["img", "gif", "vid"])
+    post = get_cached_post(subreddit, ctype)
+    if post:
+        post_counter += 1
+        await ctx.send(post)
+    else:
+        await ctx.send("❌ No posts found in mix.")
+
+# --- Auto System ---
+auto_tasks = {}
 
 @client.command()
 async def auto(ctx, seconds: int = 30, content_type: str = "img"):
+    global auto_tasks
     if not ctx.channel.is_nsfw():
-        return await ctx.send("⚠️ NSFW only.")
+        await ctx.send("⚠️ NSFW only command.")
+        return
     if seconds < 5:
-        return await ctx.send("⚠️ Minimum is 5 seconds.")
+        await ctx.send("⚠️ Minimum is 5 seconds.")
+        return
     if content_type not in ["img", "gif", "vid", "random"]:
-        return await ctx.send("⚠️ Type must be img | gif | vid | random.")
+        await ctx.send("⚠️ Type must be img | gif | vid | random.")
+        return
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        return await ctx.send("⚠️ Auto already running here.")
-    task = asyncio.create_task(auto_loop(ctx.channel, seconds, content_type))
+        await ctx.send("⚠️ Auto already running here.")
+        return
+
+    async def auto_loop(channel):
+        while True:
+            pool = nsfw_pool + hentai_pool
+            ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
+            subreddit = pyrandom.choice(pool)
+            post = get_cached_post(subreddit, ctype)
+            if post:
+                await channel.send(post)
+            await asyncio.sleep(seconds)
+
+    task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
     await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
 
 @client.command()
 async def automix(ctx, seconds: int = 30):
+    global auto_tasks
     if not ctx.channel.is_nsfw():
-        return await ctx.send("⚠️ NSFW only.")
+        await ctx.send("⚠️ NSFW only command.")
+        return
     if seconds < 5:
-        return await ctx.send("⚠️ Minimum is 5 seconds.")
+        await ctx.send("⚠️ Minimum is 5 seconds.")
+        return
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        return await ctx.send("⚠️ Auto already running here.")
-    task = asyncio.create_task(auto_loop(ctx.channel, seconds, "random", mix=True))
+        await ctx.send("⚠️ Auto already running here.")
+        return
+
+    async def automix_loop(channel):
+        while True:
+            pool = nsfw_pool + hentai_pool
+            ctype = pyrandom.choice(["img", "gif", "vid"])
+            subreddit = pyrandom.choice(pool)
+            post = get_cached_post(subreddit, ctype)
+            if post:
+                await channel.send(post)
+            await asyncio.sleep(seconds)
+
+    task = asyncio.create_task(automix_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
     await ctx.send(f"▶️ Automix started every {seconds}s.")
 
 @client.command()
 async def autostop(ctx):
+    global auto_tasks
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
         auto_tasks[ctx.channel.id].cancel()
         await ctx.send("⏹️ Auto stopped here.")
     else:
         await ctx.send("⚠️ Auto was not running.")
 
-# --- Stats ---
+# --- Stats & Help ---
 @client.command()
 async def stats(ctx):
     uptime = datetime.utcnow() - start_time
-    await ctx.send(f"📊 Uptime: {uptime} | Posts sent: {post_counter} | Version: {version}")
-
-@client.command()
-async def rstats(ctx):
-    if not sub_usage_counter:
-        return await ctx.send("ℹ️ No subreddit stats yet.")
-    top = sorted(sub_usage_counter.items(), key=lambda x: x[1], reverse=True)[:10]
-    msg = "\n".join([f"r/{sub}: {count}" for sub, count in top])
-    await ctx.send(f"📊 **Top Subreddits Used**\n{msg}")
+    await ctx.send(
+        f"📊 **Stats**\n"
+        f"🕒 Uptime: {uptime}\n"
+        f"📩 Posts sent: {post_counter}\n"
+        f"🤖 Version: {version}"
+    )
 
 @client.command()
 async def helpme(ctx):
     await ctx.send(
         "**Commands:**\n"
-        "`!r <amount> <type>` - Random posts\n"
-        "`!batch <amount> <type>` - Multiple posts\n"
-        "`!search <keyword> <amount> <type>` - Search Reddit\n"
-        "`!last <amount>` - Resend last posts\n"
-        "`!randomsub` - Random subreddit post\n"
+        "`!r <amount> <type>` - Random posts (img/gif/vid)\n"
+        "`!rsub <subreddit> <amount> <type>` - From specific sub\n"
+        "`!batch <amount> <type>` - Batch posts in one message\n"
+        "`!random` - Random post from pool\n"
+        "`!mix` - Mixed nsfw+hentai post\n"
         "`!auto <seconds> <type>` - Auto posting\n"
-        "`!automix <seconds>` - Auto random type\n"
+        "`!automix <seconds>` - Auto mix posting\n"
         "`!autostop` - Stop auto/automix\n"
-        "`!stats` - Show stats\n"
-        "`!rstats` - Top subreddits used\n"
-        "`!poolsize` - Pool sizes\n"
-        "`!ping` - Latency check\n"
-        "`!alive` - Quick check\n"
+        "`!stats` - Show bot stats\n"
+        "`!alive` - Quick bot check\n"
     )
 
 @client.command()
 async def alive(ctx):
     await ctx.send("✅ Bot is alive and running!")
 
-# --- Flask ---
+# --- Flask server ---
 app = Flask("")
 
 @app.route("/")
@@ -363,6 +384,6 @@ while True:
     try:
         client.run(user_token, bot=False)
     except Exception as e:
-        logger.error(f"[Bot Error] Restarting: {e}")
-        time.sleep(5)
-    
+        print(f"Bot crashed: {e}. Restarting in 10s...")
+        time.sleep(10)
+            
