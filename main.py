@@ -14,13 +14,12 @@ from datetime import datetime
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v4.0-self'
+version = 'v4.2-self'
 start_time = datetime.utcnow()
 post_counter = 0
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
-spam_id = os.getenv("spam_id")  # not used anymore, but kept for compatibility
 service_url = os.getenv("SERVICE_URL")
 
 if not user_token:
@@ -35,14 +34,6 @@ reddit = praw.Reddit(
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
     user_agent="NsfwDiscordBot/1.0"
 )
-
-# --- Read Files (pokemon/mythical placeholders for legacy support) ---
-if os.path.exists("pokemon"):
-    with open('pokemon', 'r', encoding='utf8') as file:
-        pokemon_list = file.read()
-if os.path.exists("mythical"):
-    with open('mythical', 'r', encoding='utf8') as file:
-        mythical_list = file.read()
 
 client = commands.Bot(command_prefix="!")
 
@@ -106,12 +97,22 @@ hentai_pool = [
     "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch"
 ]
 
-# --- NSFW helpers ---
-def get_filtered_posts(subreddit_name, content_type, limit=50):
+# --- Helper: Get unique posts ---
+def get_filtered_posts(subreddit_name, content_type, limit=100):
     posts = []
     try:
         subreddit = reddit.subreddit(subreddit_name)
-        for post in subreddit.hot(limit=limit):
+
+        # rotate source to avoid repetition
+        fetch_method = pyrandom.choice(["hot", "new", "top"])
+        if fetch_method == "hot":
+            listings = subreddit.hot(limit=limit)
+        elif fetch_method == "new":
+            listings = subreddit.new(limit=limit)
+        else:
+            listings = subreddit.top(limit=limit)
+
+        for post in listings:
             if post.stickied:
                 continue
             url = str(post.url)
@@ -123,20 +124,20 @@ def get_filtered_posts(subreddit_name, content_type, limit=50):
                 posts.append(url)
 
             elif content_type == "gif" and (
-                url.endswith(".gif")
-                or "gfycat" in url or "redgifs" in url
-                or url.endswith(".gifv")
+                url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")
             ):
                 posts.append(url)
 
             elif content_type == "vid" and (
-                url.endswith(".mp4")
-                or "v.redd.it" in url
+                url.endswith(".mp4") or "v.redd.it" in url
             ):
                 posts.append(url)
 
+        # Shuffle to avoid same first results
+        pyrandom.shuffle(posts)
+
     except Exception as e:
-        print(f"[Reddit Error] Failed in r/{subreddit_name}: {e}")
+        print(f"[Reddit Error] r/{subreddit_name}: {e}")
     return posts
 
 # --- Commands ---
@@ -173,6 +174,7 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
 
 @client.command()
 async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
+    """Usage: !rsub <subreddit> <amount> <type>"""
     global post_counter
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
@@ -180,7 +182,7 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     if amount > 10:
         await ctx.send("⚠️ Max 10 posts at once.")
         return
-    posts = get_filtered_posts(subreddit, content_type)
+    posts = get_filtered_posts(subreddit, content_type, limit=100)
     if posts:
         post_counter += len(posts[:amount])
         for url in posts[:amount]:
@@ -225,7 +227,7 @@ auto_tasks = {}
 
 @client.command()
 async def auto(ctx, seconds: int = 30, content_type: str = "img"):
-    global auto_tasks, post_counter
+    global auto_tasks
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
@@ -246,8 +248,6 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
             subreddit = pyrandom.choice(pool)
             posts = get_filtered_posts(subreddit, ctype)
             if posts:
-                nonlocal_post_counter = 0
-                nonlocal_post_counter += 1
                 await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
 
@@ -257,7 +257,7 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
 
 @client.command()
 async def automix(ctx, seconds: int = 30):
-    global auto_tasks, post_counter
+    global auto_tasks
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
@@ -275,8 +275,6 @@ async def automix(ctx, seconds: int = 30):
             subreddit = pyrandom.choice(pool)
             posts = get_filtered_posts(subreddit, ctype)
             if posts:
-                nonlocal_post_counter = 0
-                nonlocal_post_counter += 1
                 await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
 
