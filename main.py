@@ -15,7 +15,7 @@ import html
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v4.8-self'
+version = 'v4.9-self'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -39,7 +39,7 @@ reddit = praw.Reddit(
 
 client = commands.Bot(command_prefix="!")
 
-# --- Subreddit Pools (yours + some fresh additions) ---
+# --- Subreddit Pools (expanded) ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -65,17 +65,20 @@ nsfw_pool = [
     "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild",
     "trainerfucks", "AmateurPorn", "Exxxtras", "BustyNaturals",
     "TittyDrop", "TheGape", "WorkGoneWild", "Nudes", "Rule34LoL",
-    "NotSafeForWork", "LegalTeens",
-    # --- Added more NSFW pools ---
-    "CollegeAmateurs", "GoneErotic", "RealGirlsGW", "GoneWildPlus",
-    "Curvy", "ThickChixxx", "AmateurMILFs", "HotMILFs", "CheatingWives",
-    "PetiteGirls", "StackedGoneWild", "WifeSharing", "AmateurCumsluts",
+    "NotSafeForWork", "LegalTeens", "CollegeAmateurs", "GoneErotic",
+    "RealGirlsGW", "GoneWildPlus", "Curvy", "ThickChixxx",
+    "AmateurMILFs", "HotMILFs", "CheatingWives", "PetiteGirls",
+    "StackedGoneWild", "WifeSharing", "AmateurCumsluts",
     "SexyTummies", "GoneWildScrubs", "TightShirts", "UnderwearGW",
     "YogaPants", "NSFW_HTML5", "BustyPetites", "TittyDropGIFs",
     "PerfectAsses", "TrueAnal", "DeepFacials", "HardcoreAmateurs",
-    # --- Fresh ---
     "OnlyFansGirls", "OnlyFansNSFW", "ThickChicks", "GoneWild18",
-    "BimboGirls", "NSFW_Selfies", "BigAsses", "NSFW_Snap", "Ofaces"
+    "BimboGirls", "NSFW_Selfies", "BigAsses", "NSFW_Snap", "Ofaces",
+    # --- Fresh add-ons ---
+    "AmateurWives", "ExhibitionistSex", "ShowerGirls", "BedroomAmateurs",
+    "NSFW_Galleries", "SexyAsians", "ThickLatinas", "BustyAmateurs",
+    "EroticArt", "HomeMadeXXX", "SluttyGirls", "AmateurExposed",
+    "PawgHQ", "TittyTuesday", "GoneWildAudio", "ThickAndBusty"
 ]
 
 hentai_pool = [
@@ -107,18 +110,19 @@ hentai_pool = [
     "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
     "Rule34Cartoon", "EcchiParadise", "LewdCartoons", "AnimeThighs",
     "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch",
-    # --- Added more ---
     "EcchiParadise", "LewdWaifu", "WaifuNSFW", "AnimeBooties",
     "MonsterHentai", "EcchiWorld", "TentacleHentai", "LewdFantasy",
     "GamerGirlHentai", "FutaHentai", "YuriHentai", "BondageHentai",
     "DoujinNsfw", "Rule34Hentai", "AnimePussy", "AnimeBoobs",
     "CartoonPorn", "AnimeLewds", "Rule34Cartoons", "UncensoredHentaiGIFs",
-    # --- Fresh ---
     "AnimeNudes", "LewdHentaiGirls", "EcchiBooty", "AnimeAhegao",
-    "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai"
+    "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai",
+    # --- Fresh add-ons ---
+    "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
+    "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ"
 ]
 
-# --- Helper: Get unique posts (gallery sends all images) ---
+# --- Helper: Get unique posts (handles galleries) ---
 def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
     global seen_posts
     posts = []
@@ -185,7 +189,6 @@ async def safe_send(channel, url):
 # --- Commands ---
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
-    """Pulls random post from NSFW pool"""
     global post_counter
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
@@ -194,24 +197,30 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
         amount = 50
 
     pool = nsfw_pool + hentai_pool
-    sent = 0
-    while sent < amount:
+    collected = []
+    tries = 0
+    max_tries = amount * 3
+
+    while len(collected) < amount and tries < max_tries:
         sub = pyrandom.choice(pool)
         posts = get_filtered_posts(sub, content_type)
         if posts:
             for url in posts:
-                if sent >= amount:
+                if len(collected) >= amount:
                     break
-                await safe_send(ctx.channel, url)
-                post_counter += 1
-                sent += 1
-        else:
-            await ctx.send("❌ No posts found.")
-            break
+                if url not in collected:
+                    collected.append(url)
+        tries += 1
+
+    if collected:
+        for url in collected:
+            await safe_send(ctx.channel, url)
+            post_counter += 1
+    else:
+        await ctx.send("❌ No posts found.")
 
 @client.command()
 async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
-    """Pulls random post from a specific subreddit"""
     global post_counter
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
@@ -219,9 +228,22 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     if amount > 50:
         amount = 50
 
-    posts = get_filtered_posts(subreddit, content_type)
-    if posts:
-        for url in posts[:amount]:
+    collected = []
+    tries = 0
+    max_tries = amount * 3
+
+    while len(collected) < amount and tries < max_tries:
+        posts = get_filtered_posts(subreddit, content_type)
+        if posts:
+            for url in posts:
+                if len(collected) >= amount:
+                    break
+                if url not in collected:
+                    collected.append(url)
+        tries += 1
+
+    if collected:
+        for url in collected:
             await safe_send(ctx.channel, url)
             post_counter += 1
     else:
@@ -229,7 +251,6 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
 
 @client.command()
 async def auto(ctx, seconds: int = 30, content_type: str = "img"):
-    """Start auto posting loop"""
     global auto_tasks
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
@@ -252,7 +273,7 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
                 sub = pyrandom.choice(pool)
                 posts = get_filtered_posts(sub, ctype)
                 if posts:
-                    for url in posts[:1]:  # auto sends 1 each cycle
+                    for url in posts[:2]:  # sends 2 each cycle
                         await safe_send(channel, url)
                 else:
                     print(f"[AutoLoop] No posts from r/{sub} ({ctype})")
@@ -270,7 +291,6 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
 
 @client.command()
 async def autostop(ctx):
-    """Stop auto posting"""
     if ctx.channel.id in auto_tasks:
         auto_tasks[ctx.channel.id].cancel()
         await ctx.send("⏹️ Auto stopped.")
@@ -279,19 +299,16 @@ async def autostop(ctx):
 
 @client.command()
 async def stats(ctx):
-    """Show stats"""
     uptime = datetime.now(timezone.utc) - start_time
     await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
 @client.command()
 async def uptime(ctx):
-    """Show uptime"""
     uptime = datetime.now(timezone.utc) - start_time
     await ctx.send(f"⏱️ Uptime: {uptime}")
 
 @client.command()
 async def search(ctx, keyword: str, amount: int = 1):
-    """Search subreddits for keyword"""
     global post_counter
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
@@ -325,10 +342,11 @@ def run_server():
 
 threading.Thread(target=run_server).start()
 
-# --- Run bot (restart loop preserved) ---
+# --- Run bot ---
 while True:
     try:
         client.run(user_token)
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10s...")
         time.sleep(10)
+    
