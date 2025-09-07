@@ -9,7 +9,7 @@ from flask import Flask
 import aiohttp
 import asyncpraw
 
-version = 'v3.9'
+version = 'v3.6'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -25,27 +25,12 @@ if not spam_id:
 if not service_url:
     service_url = "https://working-1-uy7j.onrender.com"
 
-# --- Reddit API setup (asyncpraw) ---
+# --- Reddit API setup ---
 reddit = asyncpraw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
     user_agent="NsfwDiscordBot/1.0"
 )
-
-# --- Read Files (safe fallback) ---
-try:
-    with open('pokemon', 'r', encoding='utf8') as file:
-        pokemon_list = file.read()
-except FileNotFoundError:
-    pokemon_list = ""
-try:
-    with open('mythical', 'r', encoding='utf8') as file:
-        mythical_list = file.read()
-except FileNotFoundError:
-    mythical_list = ""
-
-poketwo = 716390085896962058
-client = commands.Bot(command_prefix="!")
 
 # --- Subreddit Pools ---
 nsfw_pool = [
@@ -70,7 +55,8 @@ nsfw_pool = [
     "DirtyGaming", "nsfw_college", "facials", "hugeboobs",
     "Upskirt", "ThickFit", "NSFWFunny", "hairypussy",
     "NaughtyWives", "cumcovered", "ebony", "Latinas",
-    "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild"
+    "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild",
+    "trainerfucks"
 ]
 
 hentai_pool = [
@@ -99,11 +85,13 @@ hentai_pool = [
     "WaifuNsfw", "HentaiHQ", "AnimeEcchi", "nsfwanimegifs",
     "EcchiHentai", "HentaiCouples", "ShotaHentai", "MonsterGirlNSFW",
     "DoujinHentai", "HentaiThicc", "UncensoredEcchi", "LewdHentai",
-    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
-    "trainerfucks"
+    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus"
 ]
 
-# --- Poketwo Spam Loop ---
+# --- Discord client ---
+client = commands.Bot(command_prefix="!", self_bot=True)
+
+# --- Poketwo spam loop ---
 @tasks.loop(seconds=10)
 async def poketwo_spam_loop():
     channel = client.get_channel(int(spam_id))
@@ -121,14 +109,14 @@ async def poketwo_spam_loop():
 async def before_poketwo_spam():
     await client.wait_until_ready()
 
-# --- On Ready ---
+# --- On ready ---
 @client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user.name}')
     poketwo_spam_loop.start()
     asyncio.create_task(self_ping_loop())
 
-# --- Self-ping Loop ---
+# --- Self-ping loop ---
 async def self_ping_loop():
     await client.wait_until_ready()
     async with aiohttp.ClientSession() as session:
@@ -140,103 +128,149 @@ async def self_ping_loop():
                 print(f"Error pinging self: {e}")
             await asyncio.sleep(600)
 
-# --- NSFW Post Fetcher (with fallback) ---
+# --- NSFW helpers ---
 async def get_filtered_posts(subreddit_name, content_type, limit=50):
-    async def fetch_from(method):
-        results = []
+    posts = []
+    try:
         subreddit = await reddit.subreddit(subreddit_name)
-        async for post in getattr(subreddit, method)(limit=limit):
+        async for post in subreddit.hot(limit=limit):
             if post.stickied:
                 continue
+
             url = str(post.url)
+            found = False
 
+            # --- image ---
             if content_type == "img" and (
-                url.endswith((".jpg", ".jpeg", ".png"))
-                or "i.redd.it" in url or "preview.redd.it" in url
-                or "imgur" in url
+                url.endswith((".jpg", ".jpeg", ".png", ".webp"))
+                or any(x in url for x in ["i.redd.it", "preview.redd.it", "imgur.com"])
             ):
-                results.append(url)
+                posts.append(url); found = True
 
+            # --- gif ---
             elif content_type == "gif" and (
-                url.endswith(".gif")
-                or "gfycat" in url or "redgifs" in url
-                or url.endswith(".gifv")
+                url.endswith((".gif", ".gifv"))
+                or any(x in url for x in ["gfycat", "redgifs", "imgur.com"])
             ):
-                results.append(url)
+                posts.append(url); found = True
 
+            # --- video ---
             elif content_type == "vid" and (
                 url.endswith(".mp4")
                 or "v.redd.it" in url
                 or "redgifs" in url
             ):
-                results.append(url)
-        return results
+                posts.append(url); found = True
 
-    try:
-        posts = await fetch_from("hot")
-        if not posts:
-            posts = await fetch_from("new")
-        if not posts:
-            posts = await fetch_from("top")
-        return posts
+            # --- fallback: reddit post link ---
+            if not found:
+                posts.append(f"https://redd.it/{post.id}")
+
     except Exception as e:
-        print(f"[Reddit Error] r/{subreddit_name}: {e}")
-        return []
+        print(f"[Reddit Error] Failed in r/{subreddit_name}: {e}")
+    return posts
 
 # --- Commands ---
 @client.command()
-async def r(ctx, content_type="img"):
-    subreddit_name = pyrandom.choice(nsfw_pool)
-    posts = await get_filtered_posts(subreddit_name, content_type)
-    if posts:
-        await ctx.send(pyrandom.choice(posts))
-    else:
-        await ctx.send(f"❌ No posts found in r/{subreddit_name}.")
-
-@client.command()
-async def rsub(ctx, subreddit_name, content_type="img"):
-    posts = await get_filtered_posts(subreddit_name, content_type)
-    if posts:
-        await ctx.send(pyrandom.choice(posts))
-    else:
-        await ctx.send(f"❌ No posts found in r/{subreddit_name}.")
-
-@client.command()
-async def random(ctx, content_type="img"):
-    pool = nsfw_pool + hentai_pool
-    subreddit_name = pyrandom.choice(pool)
-    posts = await get_filtered_posts(subreddit_name, content_type)
-    if posts:
-        await ctx.send(pyrandom.choice(posts))
-    else:
-        await ctx.send(f"❌ No posts found in r/{subreddit_name}.")
-
-auto_posting = False
-
-@client.command()
-async def auto(ctx, content_type="img"):
-    global auto_posting
-    if auto_posting:
-        await ctx.send("❌ Auto-post is already running.")
+async def r(ctx, amount: int = 1, content_type: str = "img"):
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
         return
-    auto_posting = True
-    await ctx.send("✅ Auto-posting started.")
-    while auto_posting:
-        subreddit_name = pyrandom.choice(nsfw_pool + hentai_pool)
-        posts = await get_filtered_posts(subreddit_name, content_type)
+    if amount > 10:
+        await ctx.send("⚠️ Max 10 posts at once.")
+        return
+    if content_type not in ["img", "gif", "vid"]:
+        await ctx.send("⚠️ Type must be one of: img, gif, vid.")
+        return
+
+    pool = nsfw_pool + hentai_pool
+    results = []
+    for _ in range(amount * 4):
+        subreddit = pyrandom.choice(pool)
+        posts = await get_filtered_posts(subreddit, content_type)
         if posts:
-            await ctx.send(pyrandom.choice(posts))
-        else:
-            await ctx.send(f"❌ No posts found in r/{subreddit_name}.")
-        await asyncio.sleep(30)
+            results.append(pyrandom.choice(posts))
+        if len(results) >= amount:
+            break
+
+    if results:
+        for url in results[:amount]:
+            await ctx.send(url)
+    else:
+        await ctx.send("❌ No posts found.")
+
+@client.command()
+async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
+        return
+    if amount > 10:
+        await ctx.send("⚠️ Max 10 posts at once.")
+        return
+    posts = await get_filtered_posts(subreddit, content_type)
+    if posts:
+        for url in posts[:amount]:
+            await ctx.send(url)
+    else:
+        await ctx.send(f"❌ No posts found in r/{subreddit}.")
+
+@client.command()
+async def random(ctx):
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
+        return
+    pool = nsfw_pool + hentai_pool
+    subreddit = pyrandom.choice(pool)
+    ctype = pyrandom.choice(["img", "gif", "vid"])
+    posts = await get_filtered_posts(subreddit, ctype)
+    if posts:
+        await ctx.send(pyrandom.choice(posts))
+    else:
+        await ctx.send("❌ No posts found.")
+
+# --- Auto System ---
+auto_tasks = {}
+
+@client.command()
+async def auto(ctx, seconds: int = 30, content_type: str = "img"):
+    global auto_tasks
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
+        return
+    if seconds < 5:
+        await ctx.send("⚠️ Minimum is 5 seconds.")
+        return
+    if content_type not in ["img", "gif", "vid", "random"]:
+        await ctx.send("⚠️ Type must be one of: img, gif, vid, random.")
+        return
+    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+        await ctx.send("⚠️ Auto already running in this channel.")
+        return
+
+    async def auto_loop(channel):
+        while True:
+            pool = nsfw_pool + hentai_pool
+            ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
+            subreddit = pyrandom.choice(pool)
+            posts = await get_filtered_posts(subreddit, ctype)
+            if posts:
+                await channel.send(pyrandom.choice(posts))
+            await asyncio.sleep(seconds)
+
+    task = asyncio.create_task(auto_loop(ctx.channel))
+    auto_tasks[ctx.channel.id] = task
+    await ctx.send(f"▶️ Auto started in this channel every {seconds}s for {content_type}.")
 
 @client.command()
 async def autostop(ctx):
-    global auto_posting
-    auto_posting = False
-    await ctx.send("🛑 Auto-posting stopped.")
+    global auto_tasks
+    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+        auto_tasks[ctx.channel.id].cancel()
+        await ctx.send("⏹️ Auto stopped in this channel.")
+    else:
+        await ctx.send("⚠️ Auto was not running here.")
 
-# --- Flask Server ---
+# --- Flask server ---
 app = Flask("")
 
 @app.route("/")
@@ -244,15 +278,16 @@ def home():
     return "Bot is running!"
 
 def run_server():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
+# Start Flask server in a thread
 threading.Thread(target=run_server).start()
 
-# --- Run Bot ---
+# --- Run bot ---
 while True:
     try:
         client.run(user_token)
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10 seconds...")
-        asyncio.run(asyncio.sleep(10))
-                
+        asyncio.sleep(10)
+        
