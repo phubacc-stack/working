@@ -10,7 +10,7 @@ import requests
 import time
 import praw
 
-version = 'v4.0'
+version = 'v3.6-self'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -26,17 +26,23 @@ if not spam_id:
 if not service_url:
     service_url = "https://working-1-uy7j.onrender.com"
 
-# --- Reddit API setup ---
+# --- Reddit API setup (praw) ---
 reddit = praw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
     user_agent="NsfwDiscordBot/1.0"
 )
 
-poketwo = 716390085896962058
-client = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+# --- Read Files ---
+with open('pokemon', 'r', encoding='utf8') as file:
+    pokemon_list = file.read()
+with open('mythical', 'r', encoding='utf8') as file:
+    mythical_list = file.read()
 
-# --- Subreddit Pools (Massive) ---
+poketwo = 716390085896962058
+client = commands.Bot(command_prefix="!")
+
+# --- Subreddit Pools ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -53,17 +59,14 @@ nsfw_pool = [
     "PerfectPussies", "SexyGirlsInBoots", "Blonde", "nsfwart",
     "rearpussy", "MatureMilfs", "analgw", "thickasses", "Stacked",
     "Assholes", "GirlsWithBigToys", "O_Faces", "GirlsInYogaPants",
-    "NSFW_GIF", "TrueAmateurs", "AltGoneWild", "brunette", "redheads",
-    "legalteensxxx", "fitgirls", "boobies", "asstastic", "NSFWVideos",
-    "DeepThroat", "gonewildcurvy", "DirtyGaming", "nsfw_college",
-    "facials", "hugeboobs", "Upskirt", "ThickFit", "NSFWFunny",
-    "hairypussy", "NaughtyWives", "cumcovered", "ebony", "Latinas",
+    "NSFW_GIF", "TrueAmateurs", "AltGoneWild", "brunette",
+    "redheads", "legalteensxxx", "fitgirls", "boobies",
+    "asstastic", "NSFWVideos", "DeepThroat", "gonewildcurvy",
+    "DirtyGaming", "nsfw_college", "facials", "hugeboobs",
+    "Upskirt", "ThickFit", "NSFWFunny", "hairypussy",
+    "NaughtyWives", "cumcovered", "ebony", "Latinas",
     "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild",
-    # Extra expansion:
-    "RealGirlsGW", "slutsofreddit", "NSFW_HTML5", "porn_gifs",
-    "chubby", "amateur_milfs", "gonewildcouples", "shemales", "traps",
-    "publicsex", "nsfw_Porn_GIFs", "nsfwdeepthroat", "OralCreampie",
-    "cfnm", "bondage", "TabooPorn", "OnlyFansGirls101"
+    "trainerfucks"
 ]
 
 hentai_pool = [
@@ -90,16 +93,12 @@ hentai_pool = [
     "PhineasAndFerbNSFW", "ecchibabes", "rule34cartoons",
     "LewdAnimeGirls", "OppaiHentai", "AnimeNsfw", "BunnyGirlsNSFW",
     "WaifuNsfw", "HentaiHQ", "AnimeEcchi", "nsfwanimegifs",
-    "EcchiHentai", "HentaiCouples", "MonsterGirlNSFW",
+    "EcchiHentai", "HentaiCouples", "ShotaHentai", "MonsterGirlNSFW",
     "DoujinHentai", "HentaiThicc", "UncensoredEcchi", "LewdHentai",
-    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
-    # Extra expansion:
-    "TrainerFucks", "rule34hentai", "AnimeCumsluts", "ThiccAnime",
-    "FutaHentai", "AnimeOral", "BigAnimeAss", "TentaclePorn",
-    "DoujinshiNSFW", "UncensoredHentaiGIFs"
+    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus"
 ]
 
-# --- Poketwo Spam Loop ---
+# --- Safe Poketwo spam loop ---
 @tasks.loop(seconds=10)
 async def poketwo_spam_loop():
     channel = client.get_channel(int(spam_id))
@@ -120,7 +119,7 @@ async def before_poketwo_spam():
 # --- On ready ---
 @client.event
 async def on_ready():
-    print(f'✅ Logged in as {client.user.name}')
+    print(f'✅ Logged in as {client.user}')
     poketwo_spam_loop.start()
     asyncio.create_task(self_ping_loop())
 
@@ -145,29 +144,46 @@ def get_filtered_posts(subreddit_name, content_type, limit=50):
                 continue
             url = str(post.url)
 
-            if content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url):
+            if content_type == "img" and (
+                url.endswith((".jpg", ".jpeg", ".png"))
+                or "i.redd.it" in url or "preview.redd.it" in url
+            ):
                 posts.append(url)
-            elif content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")):
+
+            elif content_type == "gif" and (
+                url.endswith(".gif")
+                or "gfycat" in url or "redgifs" in url
+                or url.endswith(".gifv")
+            ):
                 posts.append(url)
-            elif content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url):
+
+            elif content_type == "vid" and (
+                url.endswith(".mp4")
+                or "v.redd.it" in url
+            ):
                 posts.append(url)
+
     except Exception as e:
-        print(f"[Reddit Error] r/{subreddit_name}: {e}")
+        print(f"[Reddit Error] Failed in r/{subreddit_name}: {e}")
     return posts
 
-# --- Commands ---
+# --- NSFW Commands ---
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
+    """Usage: !r <amount> <type> (type = img | gif | vid)"""
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
     if amount > 10:
-        await ctx.send("⚠️ Max 10 posts.")
+        await ctx.send("⚠️ Max 10 posts at once.")
+        return
+    if content_type not in ["img", "gif", "vid"]:
+        await ctx.send("⚠️ Type must be one of: img, gif, vid.")
         return
 
     pool = nsfw_pool + hentai_pool
     results = []
-    for _ in range(amount * 6):  # oversample
+    for _ in range(amount * 4):  # oversample
         subreddit = pyrandom.choice(pool)
         posts = get_filtered_posts(subreddit, content_type)
         if posts:
@@ -180,11 +196,16 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
             await ctx.send(url)
     else:
         await ctx.send("❌ No posts found.")
+        print(f"[r] No results for type {content_type}")
 
 @client.command()
 async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
+    """Usage: !rsub <subreddit> <amount> <type>"""
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
+        return
+    if amount > 10:
+        await ctx.send("⚠️ Max 10 posts at once.")
         return
     posts = get_filtered_posts(subreddit, content_type)
     if posts:
@@ -195,6 +216,7 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
 
 @client.command()
 async def random(ctx):
+    """Usage: !random (fetches random img/gif/vid)"""
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
@@ -206,12 +228,14 @@ async def random(ctx):
         await ctx.send(pyrandom.choice(posts))
     else:
         await ctx.send("❌ No posts found.")
+        print(f"[random] No posts for r/{subreddit} type={ctype}")
 
-# --- Auto system ---
+# --- Auto System ---
 auto_tasks = {}
 
 @client.command()
 async def auto(ctx, seconds: int = 30, content_type: str = "img"):
+    """Usage: !auto <seconds> <type>"""
     global auto_tasks
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
@@ -223,7 +247,7 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
         await ctx.send("⚠️ Type must be one of: img, gif, vid, random.")
         return
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        await ctx.send("⚠️ Auto already running.")
+        await ctx.send("⚠️ Auto already running in this channel.")
         return
 
     async def auto_loop(channel):
@@ -234,20 +258,22 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
             posts = get_filtered_posts(subreddit, ctype)
             if posts:
                 await channel.send(pyrandom.choice(posts))
+            else:
+                print(f"[auto] No posts in r/{subreddit} type={ctype}")
             await asyncio.sleep(seconds)
 
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
+    await ctx.send(f"▶️ Auto started in this channel every {seconds}s for {content_type}.")
 
 @client.command()
 async def autostop(ctx):
     global auto_tasks
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
         auto_tasks[ctx.channel.id].cancel()
-        await ctx.send("⏹️ Auto stopped.")
+        await ctx.send("⏹️ Auto stopped in this channel.")
     else:
-        await ctx.send("⚠️ Auto was not running.")
+        await ctx.send("⚠️ Auto was not running here.")
 
 # --- Flask server ---
 app = Flask("")
@@ -266,6 +292,6 @@ while True:
     try:
         client.run(user_token)
     except Exception as e:
-        print(f"Bot crashed: {e}. Restarting in 10s...")
+        print(f"Bot crashed: {e}. Restarting in 10 seconds...")
         time.sleep(10)
         
