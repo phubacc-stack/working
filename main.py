@@ -10,13 +10,15 @@ import requests
 import time
 import praw
 from datetime import datetime, timezone
+import html
 
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v4.5-self'
+version = 'v4.7-self'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
+seen_posts = set()
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -37,7 +39,7 @@ reddit = praw.Reddit(
 
 client = commands.Bot(command_prefix="!")
 
-# --- Subreddit Pools (expanded, no removals) ---
+# --- Subreddit Pools (yours + some fresh additions) ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -70,7 +72,10 @@ nsfw_pool = [
     "PetiteGirls", "StackedGoneWild", "WifeSharing", "AmateurCumsluts",
     "SexyTummies", "GoneWildScrubs", "TightShirts", "UnderwearGW",
     "YogaPants", "NSFW_HTML5", "BustyPetites", "TittyDropGIFs",
-    "PerfectAsses", "TrueAnal", "DeepFacials", "HardcoreAmateurs"
+    "PerfectAsses", "TrueAnal", "DeepFacials", "HardcoreAmateurs",
+    # --- Fresh ---
+    "OnlyFansGirls", "OnlyFansNSFW", "ThickChicks", "GoneWild18",
+    "BimboGirls", "NSFW_Selfies", "BigAsses", "NSFW_Snap", "Ofaces"
 ]
 
 hentai_pool = [
@@ -102,16 +107,20 @@ hentai_pool = [
     "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
     "Rule34Cartoon", "EcchiParadise", "LewdCartoons", "AnimeThighs",
     "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch",
-    # --- Added more Hentai pools ---
+    # --- Added more ---
     "EcchiParadise", "LewdWaifu", "WaifuNSFW", "AnimeBooties",
     "MonsterHentai", "EcchiWorld", "TentacleHentai", "LewdFantasy",
     "GamerGirlHentai", "FutaHentai", "YuriHentai", "BondageHentai",
     "DoujinNsfw", "Rule34Hentai", "AnimePussy", "AnimeBoobs",
-    "CartoonPorn", "AnimeLewds", "Rule34Cartoons", "UncensoredHentaiGIFs"
+    "CartoonPorn", "AnimeLewds", "Rule34Cartoons", "UncensoredHentaiGIFs",
+    # --- Fresh ---
+    "AnimeNudes", "LewdHentaiGirls", "EcchiBooty", "AnimeAhegao",
+    "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai"
 ]
 
-# --- Helper: Get unique posts with retries + gallery/imgur support ---
+# --- Helper: Get unique posts (gallery sends all images) ---
 def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
+    global seen_posts
     posts = []
     for attempt in range(retries):
         try:
@@ -124,11 +133,16 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
                     continue
                 url = str(post.url)
 
-                # Handle reddit galleries
+                # Handle reddit galleries (send ALL images)
                 if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
+                    gallery_urls = []
                     for item in post.media_metadata.values():
                         if "s" in item and "u" in item["s"]:
-                            posts.append(item["s"]["u"])
+                            gallery_url = html.unescape(item["s"]["u"])
+                            if gallery_url not in seen_posts:
+                                gallery_urls.append(gallery_url)
+                    if gallery_urls:
+                        posts.extend(gallery_urls)
                     continue
 
                 # Handle imgur albums
@@ -137,25 +151,20 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
                 if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
                     url = url + ".jpg"
 
-                if content_type == "img" and (
-                    url.endswith((".jpg", ".jpeg", ".png"))
-                    or "i.redd.it" in url or "preview.redd.it" in url
+                # Match content type + dedupe
+                if (
+                    (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
+                    or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
+                    or (content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url))
                 ):
-                    posts.append(url)
-
-                elif content_type == "gif" and (
-                    url.endswith(".gif") or "gfycat" in url
-                    or "redgifs" in url or url.endswith(".gifv")
-                ):
-                    posts.append(url)
-
-                elif content_type == "vid" and (
-                    url.endswith(".mp4") or "v.redd.it" in url
-                ):
-                    posts.append(url)
+                    if url not in seen_posts:
+                        posts.append(url)
 
             if posts:
                 pyrandom.shuffle(posts)
+                seen_posts.update(posts)
+                if len(seen_posts) > 5000:
+                    seen_posts.clear()
                 break
 
         except Exception as e:
@@ -181,16 +190,16 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
-    if amount > 25:  # limit increased
+    if amount > 25:
         amount = 25
     pool = nsfw_pool + hentai_pool
     for _ in range(amount):
         sub = pyrandom.choice(pool)
         posts = get_filtered_posts(sub, content_type)
         if posts:
-            url = pyrandom.choice(posts)
-            await safe_send(ctx.channel, url)
-            post_counter += 1
+            for url in posts[:amount]:  # send multiple if gallery
+                await safe_send(ctx.channel, url)
+                post_counter += 1
         else:
             await ctx.send("❌ No posts found.")
 
@@ -205,8 +214,7 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
         amount = 25
     posts = get_filtered_posts(subreddit, content_type)
     if posts:
-        for _ in range(amount):
-            url = pyrandom.choice(posts)
+        for url in posts[:amount]:
             await safe_send(ctx.channel, url)
             post_counter += 1
     else:
@@ -237,7 +245,8 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
                 sub = pyrandom.choice(pool)
                 posts = get_filtered_posts(sub, ctype)
                 if posts:
-                    await safe_send(channel, pyrandom.choice(posts))
+                    for url in posts[:1]:  # auto sends 1 each cycle
+                        await safe_send(channel, url)
                 else:
                     print(f"[AutoLoop] No posts from r/{sub} ({ctype})")
                 await asyncio.sleep(seconds)
@@ -291,8 +300,7 @@ async def search(ctx, keyword: str, amount: int = 1):
         await ctx.send(f"❌ Search error: {e}")
         return
     if posts:
-        for _ in range(amount):
-            url = pyrandom.choice(posts)
+        for url in posts[:amount]:
             await safe_send(ctx.channel, url)
             post_counter += 1
     else:
@@ -310,11 +318,11 @@ def run_server():
 
 threading.Thread(target=run_server).start()
 
-# --- Run bot (your restart loop preserved) ---
+# --- Run bot (restart loop preserved) ---
 while True:
     try:
         client.run(user_token)
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10s...")
         time.sleep(10)
-                                 
+        
