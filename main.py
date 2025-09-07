@@ -9,13 +9,13 @@ from flask import Flask
 import requests
 import time
 import praw
-from datetime import datetime
+from datetime import datetime, timezone
 
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.0-self'
-start_time = datetime.utcnow()
+version = 'v4.3-self'
+start_time = datetime.now(timezone.utc)
 post_counter = 0
 
 # --- Discord Environment Variables ---
@@ -32,12 +32,12 @@ if not service_url:
 reddit = praw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
-    user_agent="NsfwDiscordBot/2.0"
+    user_agent="NsfwDiscordBot/1.0"
 )
 
-client = commands.Bot(command_prefix="!")  # no intents needed for selfbot
+client = commands.Bot(command_prefix="!")
 
-# --- Subreddit Pools (expanded, not reduced) ---
+# --- Subreddit Pools ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -63,10 +63,7 @@ nsfw_pool = [
     "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild",
     "trainerfucks", "AmateurPorn", "Exxxtras", "BustyNaturals",
     "TittyDrop", "TheGape", "WorkGoneWild", "Nudes", "Rule34LoL",
-    "NotSafeForWork", "LegalTeens",
-    # Added more
-    "AmateurGirls", "NSFW_Wallpapers", "porn_gifs",
-    "RealAmateur", "TrueFucking", "homemadexxx"
+    "NotSafeForWork", "LegalTeens"
 ]
 
 hentai_pool = [
@@ -97,25 +94,11 @@ hentai_pool = [
     "DoujinHentai", "HentaiThicc", "UncensoredEcchi", "LewdHentai",
     "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
     "Rule34Cartoon", "EcchiParadise", "LewdCartoons", "AnimeThighs",
-    "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch",
-    # Added more
-    "HentaiEcchi", "LewdAnimeArt", "AnimeLewds",
-    "EcchiGirls", "HentaiArts"
+    "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch"
 ]
 
-# --- Cache for posts ---
-post_cache = {}
-
-def get_cached_post(subreddit, content_type, limit=500):
-    key = (subreddit, content_type)
-    if key not in post_cache or not post_cache[key]:
-        post_cache[key] = get_filtered_posts(subreddit, content_type, limit=limit)
-    if post_cache[key]:
-        return post_cache[key].pop()
-    return None
-
 # --- Helper: Get unique posts ---
-def get_filtered_posts(subreddit_name, content_type, limit=500):
+def get_filtered_posts(subreddit_name, content_type, limit=100):
     posts = []
     try:
         subreddit = reddit.subreddit(subreddit_name)
@@ -172,11 +155,11 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
 
     pool = nsfw_pool + hentai_pool
     results = []
-    for _ in range(amount * 10):
+    for _ in range(amount * 4):
         subreddit = pyrandom.choice(pool)
-        post = get_cached_post(subreddit, content_type)
-        if post:
-            results.append(post)
+        posts = get_filtered_posts(subreddit, content_type)
+        if posts:
+            results.append(pyrandom.choice(posts))
         if len(results) >= amount:
             break
 
@@ -197,43 +180,13 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     if amount > 10:
         await ctx.send("⚠️ Max 10 posts at once.")
         return
-    results = []
-    for _ in range(amount * 5):
-        post = get_cached_post(subreddit, content_type)
-        if post:
-            results.append(post)
-        if len(results) >= amount:
-            break
-
-    if results:
-        post_counter += len(results)
-        for url in results:
+    posts = get_filtered_posts(subreddit, content_type, limit=100)
+    if posts:
+        post_counter += len(posts[:amount])
+        for url in posts[:amount]:
             await ctx.send(url)
     else:
         await ctx.send(f"❌ No posts found in r/{subreddit}.")
-
-@client.command()
-async def batch(ctx, amount: int = 5, content_type: str = "img"):
-    """Send multiple posts in one message"""
-    if not ctx.channel.is_nsfw():
-        return await ctx.send("⚠️ NSFW only.")
-    if amount > 10:
-        return await ctx.send("⚠️ Max 10 at once.")
-
-    pool = nsfw_pool + hentai_pool
-    results = []
-    for _ in range(amount * 10):
-        subreddit = pyrandom.choice(pool)
-        post = get_cached_post(subreddit, content_type)
-        if post:
-            results.append(post)
-        if len(results) >= amount:
-            break
-
-    if results:
-        await ctx.send("\n".join(results[:amount]))
-    else:
-        await ctx.send("❌ No posts found.")
 
 @client.command()
 async def random(ctx):
@@ -244,10 +197,10 @@ async def random(ctx):
     pool = nsfw_pool + hentai_pool
     subreddit = pyrandom.choice(pool)
     ctype = pyrandom.choice(["img", "gif", "vid"])
-    post = get_cached_post(subreddit, ctype)
-    if post:
+    posts = get_filtered_posts(subreddit, ctype)
+    if posts:
         post_counter += 1
-        await ctx.send(post)
+        await ctx.send(pyrandom.choice(posts))
     else:
         await ctx.send("❌ No posts found.")
 
@@ -260,12 +213,50 @@ async def mix(ctx):
     pool = nsfw_pool + hentai_pool
     subreddit = pyrandom.choice(pool)
     ctype = pyrandom.choice(["img", "gif", "vid"])
-    post = get_cached_post(subreddit, ctype)
-    if post:
+    posts = get_filtered_posts(subreddit, ctype)
+    if posts:
         post_counter += 1
-        await ctx.send(post)
+        await ctx.send(pyrandom.choice(posts))
     else:
         await ctx.send("❌ No posts found in mix.")
+
+# --- New Commands ---
+@client.command()
+async def top(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
+    """Usage: !top <subreddit> <amount> <type>"""
+    global post_counter
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
+        return
+    posts = get_filtered_posts(subreddit, content_type, limit=100)
+    if posts:
+        post_counter += len(posts[:amount])
+        for url in posts[:amount]:
+            await ctx.send(url)
+    else:
+        await ctx.send(f"❌ No top posts found in r/{subreddit}.")
+
+@client.command()
+async def search(ctx, subreddit: str, *, query: str):
+    """Usage: !search <subreddit> <query>"""
+    if not ctx.channel.is_nsfw():
+        await ctx.send("⚠️ NSFW only command.")
+        return
+    try:
+        results = []
+        for post in reddit.subreddit(subreddit).search(query, limit=10):
+            results.append(post.url)
+        if results:
+            await ctx.send("\n".join(results[:5]))
+        else:
+            await ctx.send("❌ No results found.")
+    except Exception as e:
+        await ctx.send(f"⚠️ Error: {e}")
+
+@client.command()
+async def uptime(ctx):
+    uptime = datetime.now(timezone.utc) - start_time
+    await ctx.send(f"⏱️ Uptime: {uptime}")
 
 # --- Auto System ---
 auto_tasks = {}
@@ -291,9 +282,9 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
             subreddit = pyrandom.choice(pool)
-            post = get_cached_post(subreddit, ctype)
-            if post:
-                await channel.send(post)
+            posts = get_filtered_posts(subreddit, ctype)
+            if posts:
+                await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
 
     task = asyncio.create_task(auto_loop(ctx.channel))
@@ -318,9 +309,9 @@ async def automix(ctx, seconds: int = 30):
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"])
             subreddit = pyrandom.choice(pool)
-            post = get_cached_post(subreddit, ctype)
-            if post:
-                await channel.send(post)
+            posts = get_filtered_posts(subreddit, ctype)
+            if posts:
+                await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
 
     task = asyncio.create_task(automix_loop(ctx.channel))
@@ -339,7 +330,7 @@ async def autostop(ctx):
 # --- Stats & Help ---
 @client.command()
 async def stats(ctx):
-    uptime = datetime.utcnow() - start_time
+    uptime = datetime.now(timezone.utc) - start_time
     await ctx.send(
         f"📊 **Stats**\n"
         f"🕒 Uptime: {uptime}\n"
@@ -353,12 +344,14 @@ async def helpme(ctx):
         "**Commands:**\n"
         "`!r <amount> <type>` - Random posts (img/gif/vid)\n"
         "`!rsub <subreddit> <amount> <type>` - From specific sub\n"
-        "`!batch <amount> <type>` - Batch posts in one message\n"
         "`!random` - Random post from pool\n"
         "`!mix` - Mixed nsfw+hentai post\n"
         "`!auto <seconds> <type>` - Auto posting\n"
         "`!automix <seconds>` - Auto mix posting\n"
         "`!autostop` - Stop auto/automix\n"
+        "`!top <subreddit> <amount> <type>` - Top posts\n"
+        "`!search <subreddit> <query>` - Search subreddit\n"
+        "`!uptime` - Show uptime\n"
         "`!stats` - Show bot stats\n"
         "`!alive` - Quick bot check\n"
     )
@@ -382,8 +375,8 @@ threading.Thread(target=run_server).start()
 # --- Run bot ---
 while True:
     try:
-        client.run(user_token, bot=False)
+        client.run(user_token)  # FIXED: removed bot=False
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10s...")
         time.sleep(10)
-            
+        
