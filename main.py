@@ -3,7 +3,7 @@ import sys
 import asyncio
 import random as pyrandom
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import threading
 from flask import Flask
 import requests
@@ -20,14 +20,10 @@ post_counter = 0
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
-spam_id = os.getenv("spam_id")
 service_url = os.getenv("SERVICE_URL")
 
 if not user_token:
     print("[ERROR] Missing environment variable: user_token")
-    sys.exit(1)
-if not spam_id:
-    print("[ERROR] Missing environment variable: spam_id")
     sys.exit(1)
 if not service_url:
     service_url = "https://working-1-uy7j.onrender.com"
@@ -35,17 +31,10 @@ if not service_url:
 # --- Reddit API setup (praw) ---
 reddit = praw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
-    client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
+    client_secret="1GqXW2xEWOGjqMl2bNacWdOc4tt9YA",
     user_agent="NsfwDiscordBot/1.0"
 )
 
-# --- Read Files ---
-with open('pokemon', 'r', encoding='utf8') as file:
-    pokemon_list = file.read()
-with open('mythical', 'r', encoding='utf8') as file:
-    mythical_list = file.read()
-
-poketwo = 716390085896962058
 client = commands.Bot(command_prefix="!")
 
 # --- Subreddit Pools ---
@@ -110,29 +99,10 @@ hentai_pool = [
     "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch"
 ]
 
-# --- Safe Poketwo spam loop ---
-@tasks.loop(seconds=10)
-async def poketwo_spam_loop():
-    channel = client.get_channel(int(spam_id))
-    if not channel:
-        print("Poketwo channel not found.")
-        return
-    message_content = ''.join(pyrandom.sample("1234567890", 7) * 5)
-    try:
-        await channel.send(message_content)
-        print(f"[Poketwo] Sent spam: {message_content}")
-    except Exception as e:
-        print(f"[Poketwo Spam Error] {e}")
-
-@poketwo_spam_loop.before_loop
-async def before_poketwo_spam():
-    await client.wait_until_ready()
-
 # --- On ready ---
 @client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
-    poketwo_spam_loop.start()
     asyncio.create_task(self_ping_loop())
 
 # --- Self-ping loop ---
@@ -281,7 +251,7 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
         return
 
     async def auto_loop(channel):
-        nonlocal post_counter
+        global post_counter
         while True:
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
@@ -310,7 +280,7 @@ async def automix(ctx, seconds: int = 30):
         return
 
     async def automix_loop(channel):
-        nonlocal post_counter
+        global post_counter
         while True:
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"])
@@ -378,4 +348,4 @@ while True:
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10s...")
         time.sleep(10)
-    
+        
