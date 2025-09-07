@@ -74,11 +74,14 @@ nsfw_pool = [
     "PerfectAsses", "TrueAnal", "DeepFacials", "HardcoreAmateurs",
     "OnlyFansGirls", "OnlyFansNSFW", "ThickChicks", "GoneWild18",
     "BimboGirls", "NSFW_Selfies", "BigAsses", "NSFW_Snap", "Ofaces",
-    # --- Fresh add-ons ---
     "AmateurWives", "ExhibitionistSex", "ShowerGirls", "BedroomAmateurs",
     "NSFW_Galleries", "SexyAsians", "ThickLatinas", "BustyAmateurs",
     "EroticArt", "HomeMadeXXX", "SluttyGirls", "AmateurExposed",
-    "PawgHQ", "TittyTuesday", "GoneWildAudio", "ThickAndBusty"
+    "PawgHQ", "TittyTuesday", "GoneWildAudio", "ThickAndBusty",
+    "AmateurThreesomes", "AmateurCouples", "AmateurGirls",
+    "AmateurNudes", "AmateurExhibition", "BigBoobsAmateurs",
+    "BustyAmateurs", "CurvyAmateurs", "SexyLatinas", "SexyEbony",
+    "SexyRedheads", "SexyBlondes", "SexyBrunettes"
 ]
 
 hentai_pool = [
@@ -117,7 +120,6 @@ hentai_pool = [
     "CartoonPorn", "AnimeLewds", "Rule34Cartoons", "UncensoredHentaiGIFs",
     "AnimeNudes", "LewdHentaiGirls", "EcchiBooty", "AnimeAhegao",
     "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai",
-    # --- Fresh add-ons ---
     "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
     "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ"
 ]
@@ -349,4 +351,3 @@ while True:
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10s...")
         time.sleep(10)
-    
