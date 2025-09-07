@@ -3,7 +3,7 @@ import sys
 import asyncio
 import random as pyrandom
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import threading
 from flask import Flask
 import requests
@@ -14,20 +14,17 @@ from datetime import datetime
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v3.8-self'
+version = 'v4.0-self'
 start_time = datetime.utcnow()
 post_counter = 0
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
-spam_id = os.getenv("spam_id")
+spam_id = os.getenv("spam_id")  # not used anymore, but kept for compatibility
 service_url = os.getenv("SERVICE_URL")
 
 if not user_token:
     print("[ERROR] Missing environment variable: user_token")
-    sys.exit(1)
-if not spam_id:
-    print("[ERROR] Missing environment variable: spam_id")
     sys.exit(1)
 if not service_url:
     service_url = "https://working-1-uy7j.onrender.com"
@@ -38,6 +35,14 @@ reddit = praw.Reddit(
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
     user_agent="NsfwDiscordBot/1.0"
 )
+
+# --- Read Files (pokemon/mythical placeholders for legacy support) ---
+if os.path.exists("pokemon"):
+    with open('pokemon', 'r', encoding='utf8') as file:
+        pokemon_list = file.read()
+if os.path.exists("mythical"):
+    with open('mythical', 'r', encoding='utf8') as file:
+        mythical_list = file.read()
 
 client = commands.Bot(command_prefix="!")
 
@@ -65,10 +70,9 @@ nsfw_pool = [
     "Upskirt", "ThickFit", "NSFWFunny", "hairypussy",
     "NaughtyWives", "cumcovered", "ebony", "Latinas",
     "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild",
-    "trainerfucks",
-    # Extra NSFW subs
-    "AmateurPorn", "Exxxtras", "BustyNaturals", "TittyDrop", "TheGape",
-    "WorkGoneWild", "Nudes", "Rule34LoL", "NotSafeForWork", "LegalTeens"
+    "trainerfucks", "AmateurPorn", "Exxxtras", "BustyNaturals",
+    "TittyDrop", "TheGape", "WorkGoneWild", "Nudes", "Rule34LoL",
+    "NotSafeForWork", "LegalTeens"
 ]
 
 hentai_pool = [
@@ -98,74 +102,44 @@ hentai_pool = [
     "EcchiHentai", "HentaiCouples", "ShotaHentai", "MonsterGirlNSFW",
     "DoujinHentai", "HentaiThicc", "UncensoredEcchi", "LewdHentai",
     "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
-    # Extra hentai subs
     "Rule34Cartoon", "EcchiParadise", "LewdCartoons", "AnimeThighs",
     "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch"
 ]
 
-# --- Self-ping loop ---
-async def self_ping_loop():
-    await client.wait_until_ready()
-    while True:
-        try:
-            r = requests.get(service_url)
-            print(f"Pinged {service_url} - status: {r.status_code}")
-        except Exception as e:
-            print(f"Error pinging self: {e}")
-        await asyncio.sleep(600)
-
-# --- On ready ---
-@client.event
-async def on_ready():
-    print(f'✅ Logged in as {client.user}')
-    asyncio.create_task(self_ping_loop())
-
 # --- NSFW helpers ---
-def get_filtered_posts(subreddit_name, content_type, limit=100):
+def get_filtered_posts(subreddit_name, content_type, limit=50):
     posts = []
     try:
         subreddit = reddit.subreddit(subreddit_name)
+        for post in subreddit.hot(limit=limit):
+            if post.stickied:
+                continue
+            url = str(post.url)
 
-        # Cycle through hot → new → top
-        for fetcher in [subreddit.hot, subreddit.new, subreddit.top]:
-            for post in fetcher(limit=limit):
-                if post.stickied:
-                    continue
-                url = str(post.url)
+            if content_type == "img" and (
+                url.endswith((".jpg", ".jpeg", ".png"))
+                or "i.redd.it" in url or "preview.redd.it" in url
+            ):
+                posts.append(url)
 
-                if content_type == "img" and (
-                    url.endswith((".jpg", ".jpeg", ".png"))
-                    or "i.redd.it" in url or "preview.redd.it" in url
-                ):
-                    posts.append(url)
+            elif content_type == "gif" and (
+                url.endswith(".gif")
+                or "gfycat" in url or "redgifs" in url
+                or url.endswith(".gifv")
+            ):
+                posts.append(url)
 
-                elif content_type == "gif" and (
-                    url.endswith(".gif")
-                    or "gfycat" in url or "redgifs" in url
-                    or url.endswith(".gifv")
-                ):
-                    posts.append(url)
-
-                elif content_type == "vid" and (
-                    url.endswith(".mp4")
-                    or "v.redd.it" in url
-                ):
-                    posts.append(url)
-
-            if posts:
-                break
-
-        # Fallback: grab any URL if no strict match
-        if not posts:
-            for post in subreddit.hot(limit=limit):
-                if not post.stickied:
-                    posts.append(post.url)
+            elif content_type == "vid" and (
+                url.endswith(".mp4")
+                or "v.redd.it" in url
+            ):
+                posts.append(url)
 
     except Exception as e:
         print(f"[Reddit Error] Failed in r/{subreddit_name}: {e}")
     return posts
 
-# --- NSFW Commands ---
+# --- Commands ---
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
     """Usage: !r <amount> <type>"""
@@ -232,7 +206,6 @@ async def random(ctx):
 
 @client.command()
 async def mix(ctx):
-    """Fetch one random post from both pools mixed"""
     global post_counter
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
@@ -267,13 +240,13 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
         return
 
     async def auto_loop(channel):
-        nonlocal_post_counter = 0
         while True:
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
             subreddit = pyrandom.choice(pool)
             posts = get_filtered_posts(subreddit, ctype)
             if posts:
+                nonlocal_post_counter = 0
                 nonlocal_post_counter += 1
                 await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
@@ -296,13 +269,13 @@ async def automix(ctx, seconds: int = 30):
         return
 
     async def automix_loop(channel):
-        nonlocal_post_counter = 0
         while True:
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"])
             subreddit = pyrandom.choice(pool)
             posts = get_filtered_posts(subreddit, ctype)
             if posts:
+                nonlocal_post_counter = 0
                 nonlocal_post_counter += 1
                 await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
@@ -343,7 +316,12 @@ async def helpme(ctx):
         "`!automix <seconds>` - Auto mix posting\n"
         "`!autostop` - Stop auto/automix\n"
         "`!stats` - Show bot stats\n"
+        "`!alive` - Quick bot check\n"
     )
+
+@client.command()
+async def alive(ctx):
+    await ctx.send("✅ Bot is alive and running!")
 
 # --- Flask server ---
 app = Flask("")
