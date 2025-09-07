@@ -3,7 +3,7 @@ import sys
 import asyncio
 import random as pyrandom
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import threading
 from flask import Flask
 import requests
@@ -14,16 +14,20 @@ from datetime import datetime
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v3.7-self'
+version = 'v3.8-self'
 start_time = datetime.utcnow()
 post_counter = 0
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
+spam_id = os.getenv("spam_id")
 service_url = os.getenv("SERVICE_URL")
 
 if not user_token:
     print("[ERROR] Missing environment variable: user_token")
+    sys.exit(1)
+if not spam_id:
+    print("[ERROR] Missing environment variable: spam_id")
     sys.exit(1)
 if not service_url:
     service_url = "https://working-1-uy7j.onrender.com"
@@ -31,7 +35,7 @@ if not service_url:
 # --- Reddit API setup (praw) ---
 reddit = praw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
-    client_secret="1GqXW2xEWOGjqMl2bNacWdOc4tt9YA",
+    client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
     user_agent="NsfwDiscordBot/1.0"
 )
 
@@ -99,12 +103,6 @@ hentai_pool = [
     "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch"
 ]
 
-# --- On ready ---
-@client.event
-async def on_ready():
-    print(f'✅ Logged in as {client.user}')
-    asyncio.create_task(self_ping_loop())
-
 # --- Self-ping loop ---
 async def self_ping_loop():
     await client.wait_until_ready()
@@ -116,34 +114,52 @@ async def self_ping_loop():
             print(f"Error pinging self: {e}")
         await asyncio.sleep(600)
 
+# --- On ready ---
+@client.event
+async def on_ready():
+    print(f'✅ Logged in as {client.user}')
+    asyncio.create_task(self_ping_loop())
+
 # --- NSFW helpers ---
-def get_filtered_posts(subreddit_name, content_type, limit=50):
+def get_filtered_posts(subreddit_name, content_type, limit=100):
     posts = []
     try:
         subreddit = reddit.subreddit(subreddit_name)
-        for post in subreddit.hot(limit=limit):
-            if post.stickied:
-                continue
-            url = str(post.url)
 
-            if content_type == "img" and (
-                url.endswith((".jpg", ".jpeg", ".png"))
-                or "i.redd.it" in url or "preview.redd.it" in url
-            ):
-                posts.append(url)
+        # Cycle through hot → new → top
+        for fetcher in [subreddit.hot, subreddit.new, subreddit.top]:
+            for post in fetcher(limit=limit):
+                if post.stickied:
+                    continue
+                url = str(post.url)
 
-            elif content_type == "gif" and (
-                url.endswith(".gif")
-                or "gfycat" in url or "redgifs" in url
-                or url.endswith(".gifv")
-            ):
-                posts.append(url)
+                if content_type == "img" and (
+                    url.endswith((".jpg", ".jpeg", ".png"))
+                    or "i.redd.it" in url or "preview.redd.it" in url
+                ):
+                    posts.append(url)
 
-            elif content_type == "vid" and (
-                url.endswith(".mp4")
-                or "v.redd.it" in url
-            ):
-                posts.append(url)
+                elif content_type == "gif" and (
+                    url.endswith(".gif")
+                    or "gfycat" in url or "redgifs" in url
+                    or url.endswith(".gifv")
+                ):
+                    posts.append(url)
+
+                elif content_type == "vid" and (
+                    url.endswith(".mp4")
+                    or "v.redd.it" in url
+                ):
+                    posts.append(url)
+
+            if posts:
+                break
+
+        # Fallback: grab any URL if no strict match
+        if not posts:
+            for post in subreddit.hot(limit=limit):
+                if not post.stickied:
+                    posts.append(post.url)
 
     except Exception as e:
         print(f"[Reddit Error] Failed in r/{subreddit_name}: {e}")
@@ -251,14 +267,14 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
         return
 
     async def auto_loop(channel):
-        global post_counter
+        nonlocal_post_counter = 0
         while True:
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
             subreddit = pyrandom.choice(pool)
             posts = get_filtered_posts(subreddit, ctype)
             if posts:
-                post_counter += 1
+                nonlocal_post_counter += 1
                 await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
 
@@ -280,14 +296,14 @@ async def automix(ctx, seconds: int = 30):
         return
 
     async def automix_loop(channel):
-        global post_counter
+        nonlocal_post_counter = 0
         while True:
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"])
             subreddit = pyrandom.choice(pool)
             posts = get_filtered_posts(subreddit, ctype)
             if posts:
-                post_counter += 1
+                nonlocal_post_counter += 1
                 await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
 
