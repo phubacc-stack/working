@@ -6,10 +6,11 @@ import discord
 from discord.ext import commands, tasks
 import threading
 from flask import Flask
-import aiohttp
-import asyncpraw
+import requests
+import time
+import praw
 
-version = 'v3.6'
+version = 'v4.0'
 
 # --- Discord Environment Variables ---
 user_token = os.getenv("user_token")
@@ -26,13 +27,16 @@ if not service_url:
     service_url = "https://working-1-uy7j.onrender.com"
 
 # --- Reddit API setup ---
-reddit = asyncpraw.Reddit(
+reddit = praw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
     user_agent="NsfwDiscordBot/1.0"
 )
 
-# --- Subreddit Pools ---
+poketwo = 716390085896962058
+client = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
+# --- Subreddit Pools (Massive) ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -49,14 +53,17 @@ nsfw_pool = [
     "PerfectPussies", "SexyGirlsInBoots", "Blonde", "nsfwart",
     "rearpussy", "MatureMilfs", "analgw", "thickasses", "Stacked",
     "Assholes", "GirlsWithBigToys", "O_Faces", "GirlsInYogaPants",
-    "NSFW_GIF", "TrueAmateurs", "AltGoneWild", "brunette",
-    "redheads", "legalteensxxx", "fitgirls", "boobies",
-    "asstastic", "NSFWVideos", "DeepThroat", "gonewildcurvy",
-    "DirtyGaming", "nsfw_college", "facials", "hugeboobs",
-    "Upskirt", "ThickFit", "NSFWFunny", "hairypussy",
-    "NaughtyWives", "cumcovered", "ebony", "Latinas",
+    "NSFW_GIF", "TrueAmateurs", "AltGoneWild", "brunette", "redheads",
+    "legalteensxxx", "fitgirls", "boobies", "asstastic", "NSFWVideos",
+    "DeepThroat", "gonewildcurvy", "DirtyGaming", "nsfw_college",
+    "facials", "hugeboobs", "Upskirt", "ThickFit", "NSFWFunny",
+    "hairypussy", "NaughtyWives", "cumcovered", "ebony", "Latinas",
     "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild",
-    "trainerfucks"
+    # Extra expansion:
+    "RealGirlsGW", "slutsofreddit", "NSFW_HTML5", "porn_gifs",
+    "chubby", "amateur_milfs", "gonewildcouples", "shemales", "traps",
+    "publicsex", "nsfw_Porn_GIFs", "nsfwdeepthroat", "OralCreampie",
+    "cfnm", "bondage", "TabooPorn", "OnlyFansGirls101"
 ]
 
 hentai_pool = [
@@ -83,15 +90,16 @@ hentai_pool = [
     "PhineasAndFerbNSFW", "ecchibabes", "rule34cartoons",
     "LewdAnimeGirls", "OppaiHentai", "AnimeNsfw", "BunnyGirlsNSFW",
     "WaifuNsfw", "HentaiHQ", "AnimeEcchi", "nsfwanimegifs",
-    "EcchiHentai", "HentaiCouples", "ShotaHentai", "MonsterGirlNSFW",
+    "EcchiHentai", "HentaiCouples", "MonsterGirlNSFW",
     "DoujinHentai", "HentaiThicc", "UncensoredEcchi", "LewdHentai",
-    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus"
+    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
+    # Extra expansion:
+    "TrainerFucks", "rule34hentai", "AnimeCumsluts", "ThiccAnime",
+    "FutaHentai", "AnimeOral", "BigAnimeAss", "TentaclePorn",
+    "DoujinshiNSFW", "UncensoredHentaiGIFs"
 ]
 
-# --- Discord client ---
-client = commands.Bot(command_prefix="!", self_bot=True)
-
-# --- Poketwo spam loop ---
+# --- Poketwo Spam Loop ---
 @tasks.loop(seconds=10)
 async def poketwo_spam_loop():
     channel = client.get_channel(int(spam_id))
@@ -119,55 +127,32 @@ async def on_ready():
 # --- Self-ping loop ---
 async def self_ping_loop():
     await client.wait_until_ready()
-    async with aiohttp.ClientSession() as session:
-        while True:
-            try:
-                async with session.get(service_url) as resp:
-                    print(f"Pinged {service_url} - status: {resp.status}")
-            except Exception as e:
-                print(f"Error pinging self: {e}")
-            await asyncio.sleep(600)
+    while True:
+        try:
+            r = requests.get(service_url)
+            print(f"Pinged {service_url} - status: {r.status_code}")
+        except Exception as e:
+            print(f"Error pinging self: {e}")
+        await asyncio.sleep(600)
 
 # --- NSFW helpers ---
-async def get_filtered_posts(subreddit_name, content_type, limit=50):
+def get_filtered_posts(subreddit_name, content_type, limit=50):
     posts = []
     try:
-        subreddit = await reddit.subreddit(subreddit_name)
-        async for post in subreddit.hot(limit=limit):
+        subreddit = reddit.subreddit(subreddit_name)
+        for post in subreddit.hot(limit=limit):
             if post.stickied:
                 continue
-
             url = str(post.url)
-            found = False
 
-            # --- image ---
-            if content_type == "img" and (
-                url.endswith((".jpg", ".jpeg", ".png", ".webp"))
-                or any(x in url for x in ["i.redd.it", "preview.redd.it", "imgur.com"])
-            ):
-                posts.append(url); found = True
-
-            # --- gif ---
-            elif content_type == "gif" and (
-                url.endswith((".gif", ".gifv"))
-                or any(x in url for x in ["gfycat", "redgifs", "imgur.com"])
-            ):
-                posts.append(url); found = True
-
-            # --- video ---
-            elif content_type == "vid" and (
-                url.endswith(".mp4")
-                or "v.redd.it" in url
-                or "redgifs" in url
-            ):
-                posts.append(url); found = True
-
-            # --- fallback: reddit post link ---
-            if not found:
-                posts.append(f"https://redd.it/{post.id}")
-
+            if content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url):
+                posts.append(url)
+            elif content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")):
+                posts.append(url)
+            elif content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url):
+                posts.append(url)
     except Exception as e:
-        print(f"[Reddit Error] Failed in r/{subreddit_name}: {e}")
+        print(f"[Reddit Error] r/{subreddit_name}: {e}")
     return posts
 
 # --- Commands ---
@@ -177,17 +162,14 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
         await ctx.send("⚠️ NSFW only command.")
         return
     if amount > 10:
-        await ctx.send("⚠️ Max 10 posts at once.")
-        return
-    if content_type not in ["img", "gif", "vid"]:
-        await ctx.send("⚠️ Type must be one of: img, gif, vid.")
+        await ctx.send("⚠️ Max 10 posts.")
         return
 
     pool = nsfw_pool + hentai_pool
     results = []
-    for _ in range(amount * 4):
+    for _ in range(amount * 6):  # oversample
         subreddit = pyrandom.choice(pool)
-        posts = await get_filtered_posts(subreddit, content_type)
+        posts = get_filtered_posts(subreddit, content_type)
         if posts:
             results.append(pyrandom.choice(posts))
         if len(results) >= amount:
@@ -204,10 +186,7 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
-    if amount > 10:
-        await ctx.send("⚠️ Max 10 posts at once.")
-        return
-    posts = await get_filtered_posts(subreddit, content_type)
+    posts = get_filtered_posts(subreddit, content_type)
     if posts:
         for url in posts[:amount]:
             await ctx.send(url)
@@ -222,13 +201,13 @@ async def random(ctx):
     pool = nsfw_pool + hentai_pool
     subreddit = pyrandom.choice(pool)
     ctype = pyrandom.choice(["img", "gif", "vid"])
-    posts = await get_filtered_posts(subreddit, ctype)
+    posts = get_filtered_posts(subreddit, ctype)
     if posts:
         await ctx.send(pyrandom.choice(posts))
     else:
         await ctx.send("❌ No posts found.")
 
-# --- Auto System ---
+# --- Auto system ---
 auto_tasks = {}
 
 @client.command()
@@ -244,7 +223,7 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
         await ctx.send("⚠️ Type must be one of: img, gif, vid, random.")
         return
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        await ctx.send("⚠️ Auto already running in this channel.")
+        await ctx.send("⚠️ Auto already running.")
         return
 
     async def auto_loop(channel):
@@ -252,23 +231,23 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
             pool = nsfw_pool + hentai_pool
             ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
             subreddit = pyrandom.choice(pool)
-            posts = await get_filtered_posts(subreddit, ctype)
+            posts = get_filtered_posts(subreddit, ctype)
             if posts:
                 await channel.send(pyrandom.choice(posts))
             await asyncio.sleep(seconds)
 
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto started in this channel every {seconds}s for {content_type}.")
+    await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
 
 @client.command()
 async def autostop(ctx):
     global auto_tasks
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
         auto_tasks[ctx.channel.id].cancel()
-        await ctx.send("⏹️ Auto stopped in this channel.")
+        await ctx.send("⏹️ Auto stopped.")
     else:
-        await ctx.send("⚠️ Auto was not running here.")
+        await ctx.send("⚠️ Auto was not running.")
 
 # --- Flask server ---
 app = Flask("")
@@ -278,9 +257,8 @@ def home():
     return "Bot is running!"
 
 def run_server():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
-# Start Flask server in a thread
 threading.Thread(target=run_server).start()
 
 # --- Run bot ---
@@ -288,6 +266,6 @@ while True:
     try:
         client.run(user_token)
     except Exception as e:
-        print(f"Bot crashed: {e}. Restarting in 10 seconds...")
-        asyncio.sleep(10)
+        print(f"Bot crashed: {e}. Restarting in 10s...")
+        time.sleep(10)
         
