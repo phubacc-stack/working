@@ -15,7 +15,7 @@ import html
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v4.7-self'
+version = 'v4.8-self'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -190,18 +190,24 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
-    if amount > 25:
-        amount = 25
+    if amount > 50:
+        amount = 50
+
     pool = nsfw_pool + hentai_pool
-    for _ in range(amount):
+    sent = 0
+    while sent < amount:
         sub = pyrandom.choice(pool)
         posts = get_filtered_posts(sub, content_type)
         if posts:
-            for url in posts[:amount]:  # send multiple if gallery
+            for url in posts:
+                if sent >= amount:
+                    break
                 await safe_send(ctx.channel, url)
                 post_counter += 1
+                sent += 1
         else:
             await ctx.send("❌ No posts found.")
+            break
 
 @client.command()
 async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
@@ -210,8 +216,9 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
-    if amount > 25:
-        amount = 25
+    if amount > 50:
+        amount = 50
+
     posts = get_filtered_posts(subreddit, content_type)
     if posts:
         for url in posts[:amount]:
@@ -289,8 +296,8 @@ async def search(ctx, keyword: str, amount: int = 1):
     if not ctx.channel.is_nsfw():
         await ctx.send("⚠️ NSFW only command.")
         return
-    if amount > 25:
-        amount = 25
+    if amount > 50:
+        amount = 50
     posts = []
     try:
         results = reddit.subreddits.search_by_name(keyword, include_nsfw=True)
@@ -325,4 +332,3 @@ while True:
     except Exception as e:
         print(f"Bot crashed: {e}. Restarting in 10s...")
         time.sleep(10)
-        
