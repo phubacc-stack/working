@@ -15,7 +15,7 @@ import html
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v4.9-self'
+version = 'v5.0-gallery'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -39,7 +39,7 @@ reddit = praw.Reddit(
 
 client = commands.Bot(command_prefix="!")
 
-# --- Subreddit Pools (expanded) ---
+# --- Subreddit Pools (yours, untouched, only added a few extras at the end) ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -81,7 +81,9 @@ nsfw_pool = [
     "AmateurThreesomes", "AmateurCouples", "AmateurGirls",
     "AmateurNudes", "AmateurExhibition", "BigBoobsAmateurs",
     "BustyAmateurs", "CurvyAmateurs", "SexyLatinas", "SexyEbony",
-    "SexyRedheads", "SexyBlondes", "SexyBrunettes"
+    "SexyRedheads", "SexyBlondes", "SexyBrunettes",
+    # added extras
+    "BigBoobs", "RealGirlsNSFW", "TrueGoneWild", "AmateurXXX"
 ]
 
 hentai_pool = [
@@ -121,7 +123,9 @@ hentai_pool = [
     "AnimeNudes", "LewdHentaiGirls", "EcchiBooty", "AnimeAhegao",
     "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai",
     "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
-    "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ"
+    "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ",
+    # added extras
+    "EcchiDreams", "Hentai_Uncensored", "AnimeLewdsHQ"
 ]
 
 # --- Helper: Get unique posts (handles galleries) ---
@@ -139,7 +143,7 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
                     continue
                 url = str(post.url)
 
-                # Handle reddit galleries (send ALL images)
+                # Handle reddit galleries (send ALL images together)
                 if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                     gallery_urls = []
                     for item in post.media_metadata.values():
@@ -148,7 +152,7 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
                             if gallery_url not in seen_posts:
                                 gallery_urls.append(gallery_url)
                     if gallery_urls:
-                        posts.extend(gallery_urls)
+                        posts.append(gallery_urls)
                     continue
 
                 # Handle imgur albums
@@ -168,7 +172,14 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
 
             if posts:
                 pyrandom.shuffle(posts)
-                seen_posts.update(posts)
+                flat_posts = []
+                for p in posts:
+                    if isinstance(p, list):
+                        flat_posts.extend(p)
+                    else:
+                        flat_posts.append(p)
+                seen_posts.update(flat_posts)
+
                 if len(seen_posts) > 5000:
                     seen_posts.clear()
                 break
@@ -207,17 +218,22 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
         sub = pyrandom.choice(pool)
         posts = get_filtered_posts(sub, content_type)
         if posts:
-            for url in posts:
+            for p in posts:
                 if len(collected) >= amount:
                     break
-                if url not in collected:
-                    collected.append(url)
+                collected.append(p)
         tries += 1
 
     if collected:
-        for url in collected:
-            await safe_send(ctx.channel, url)
-            post_counter += 1
+        for p in collected:
+            if isinstance(p, list):  # gallery
+                for url in p:
+                    await safe_send(ctx.channel, url)
+                    post_counter += 1
+                    await asyncio.sleep(1)
+            else:
+                await safe_send(ctx.channel, p)
+                post_counter += 1
     else:
         await ctx.send("❌ No posts found.")
 
@@ -237,17 +253,22 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     while len(collected) < amount and tries < max_tries:
         posts = get_filtered_posts(subreddit, content_type)
         if posts:
-            for url in posts:
+            for p in posts:
                 if len(collected) >= amount:
                     break
-                if url not in collected:
-                    collected.append(url)
+                collected.append(p)
         tries += 1
 
     if collected:
-        for url in collected:
-            await safe_send(ctx.channel, url)
-            post_counter += 1
+        for p in collected:
+            if isinstance(p, list):  # gallery
+                for url in p:
+                    await safe_send(ctx.channel, url)
+                    post_counter += 1
+                    await asyncio.sleep(1)
+            else:
+                await safe_send(ctx.channel, p)
+                post_counter += 1
     else:
         await ctx.send("❌ No posts found.")
 
@@ -275,8 +296,13 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
                 sub = pyrandom.choice(pool)
                 posts = get_filtered_posts(sub, ctype)
                 if posts:
-                    for url in posts[:2]:  # sends 2 each cycle
-                        await safe_send(channel, url)
+                    for p in posts:
+                        if isinstance(p, list):  # gallery
+                            for url in p:
+                                await safe_send(channel, url)
+                                await asyncio.sleep(1)
+                        else:
+                            await safe_send(channel, p)
                 else:
                     print(f"[AutoLoop] No posts from r/{sub} ({ctype})")
                 await asyncio.sleep(seconds)
@@ -347,7 +373,8 @@ threading.Thread(target=run_server).start()
 # --- Run bot ---
 while True:
     try:
-        client.run(user_token)
+        client.run(user_token, log_handler=None)
     except Exception as e:
-        print(f"Bot crashed: {e}. Restarting in 10s...")
-        time.sleep(10)
+        print(f"[FATAL] Discord error: {e}")
+        time.sleep(5)
+        
