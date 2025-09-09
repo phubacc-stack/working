@@ -15,7 +15,7 @@ import html
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.0-gallery-trickle'
+version = 'v5.1-gallery-trickle'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -39,7 +39,7 @@ reddit = praw.Reddit(
 
 client = commands.Bot(command_prefix="!")
 
-# --- Subreddit Pools (yours + extras) ---
+# --- Subreddit Pools (expanded +20 each) ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -82,8 +82,12 @@ nsfw_pool = [
     "AmateurNudes", "AmateurExhibition", "BigBoobsAmateurs",
     "BustyAmateurs", "CurvyAmateurs", "SexyLatinas", "SexyEbony",
     "SexyRedheads", "SexyBlondes", "SexyBrunettes",
-    # extras
-    "NSFWWallpapers", "UncutPorn", "LingerieGW"
+    # +20 extras
+    "NSFWWallpapers", "UncutPorn", "LingerieGW", "AmateurXXX",
+    "BigTits", "GirlsFinishingJobs", "AnalOnly", "CumInMouth",
+    "ThickAsians", "HotAmateurs", "NSFWCouples", "NaughtyAmateurs",
+    "TittyDropPorn", "AssWorship", "MILF_NSFW", "ThickCurvy",
+    "PetiteNSFW", "AmateurFacials", "ExposedAmateurs", "SluttyAmateurs"
 ]
 
 hentai_pool = [
@@ -124,8 +128,12 @@ hentai_pool = [
     "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai",
     "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
     "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ",
-    # extras
-    "NSFWManga", "EcchiCosplay"
+    # +20 extras
+    "NSFWManga", "EcchiCosplay", "TentacleNSFW", "EcchiGirls",
+    "LewdAnimeArt", "MonsterGirlHentai", "Rule34Anime", "DoujinWorlds",
+    "CartoonEcchiNSFW", "AnimeSluts", "HentaiLovers", "WaifuPornNSFW",
+    "HentaiDrops", "NSFW_Anime", "AnimeXXX", "AnimeLewdGirls",
+    "EcchiFantasy", "Rule34AnimeNSFW", "DoujinFans", "AnimeNudesHQ"
 ]
 
 # --- Helper: Get unique posts (handles galleries) ---
@@ -143,26 +151,22 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
                     continue
                 url = str(post.url)
 
-                # Handle reddit galleries (grouped list)
                 if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                     gallery_urls = []
-                    for item in list(post.media_metadata.values())[:25]:  # cap at 25
+                    for item in list(post.media_metadata.values())[:25]:
                         if "s" in item and "u" in item["s"]:
                             gallery_url = html.unescape(item["s"]["u"])
                             if gallery_url not in seen_posts:
                                 gallery_urls.append(gallery_url)
                     if gallery_urls:
-                        print(f"[Gallery] r/{subreddit_name}: {len(gallery_urls)} images (capped at 25)")
                         posts.append(gallery_urls)
                     continue
 
-                # Skip imgur albums
                 if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
                     continue
                 if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
                     url = url + ".jpg"
 
-                # Match content type + dedupe
                 if (
                     (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
                     or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
@@ -173,7 +177,6 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
 
             if posts:
                 pyrandom.shuffle(posts)
-                # flatten single items into list
                 flat = []
                 for p in posts:
                     if isinstance(p, list):
@@ -207,7 +210,7 @@ async def send_with_gallery_support(channel, item):
         for url in item:
             await safe_send(channel, url)
             post_counter += 1
-            await asyncio.sleep(2)  # trickle delay
+            await asyncio.sleep(2)
     else:
         await safe_send(channel, item)
         post_counter += 1
@@ -216,9 +219,6 @@ async def send_with_gallery_support(channel, item):
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
     global post_counter
-    if not ctx.channel.is_nsfw():
-        await ctx.send("⚠️ NSFW only command.")
-        return
     if amount > 50:
         amount = 50
 
@@ -246,9 +246,6 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
 @client.command()
 async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     global post_counter
-    if not ctx.channel.is_nsfw():
-        await ctx.send("⚠️ NSFW only command.")
-        return
     if amount > 50:
         amount = 50
 
@@ -274,9 +271,6 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
 @client.command()
 async def auto(ctx, seconds: int = 30, content_type: str = "img"):
     global auto_tasks
-    if not ctx.channel.is_nsfw():
-        await ctx.send("⚠️ NSFW only command.")
-        return
     if seconds < 5:
         await ctx.send("⚠️ Minimum 5 seconds.")
         return
@@ -297,11 +291,8 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
                 if posts:
                     for url in posts[:2]:
                         await send_with_gallery_support(channel, url)
-                else:
-                    print(f"[AutoLoop] No posts from r/{sub} ({ctype})")
                 await asyncio.sleep(seconds)
             except asyncio.CancelledError:
-                print(f"[AutoLoop] Cancelled in {channel.id}")
                 break
             except Exception as e:
                 print(f"[AutoLoop Error] {e}")
@@ -330,13 +321,8 @@ async def uptime(ctx):
     await ctx.send(f"⏱️ Uptime: {uptime}")
 
 @client.command()
-async def search(ctx, keyword: str, amount: int = 1):
+async def search(ctx, *, keyword: str):
     global post_counter
-    if not ctx.channel.is_nsfw():
-        await ctx.send("⚠️ NSFW only command.")
-        return
-    if amount > 50:
-        amount = 50
     posts = []
     try:
         results = reddit.subreddits.search_by_name(keyword, include_nsfw=True)
@@ -346,10 +332,17 @@ async def search(ctx, keyword: str, amount: int = 1):
         await ctx.send(f"❌ Search error: {e}")
         return
     if posts:
-        for url in posts[:amount]:
+        for url in posts[:10]:
             await send_with_gallery_support(ctx.channel, url)
     else:
         await ctx.send("❌ No results.")
+
+@client.command()
+async def pools(ctx):
+    nsfw_randoms = pyrandom.sample(nsfw_pool, 8)
+    hentai_randoms = pyrandom.sample(hentai_pool, 7)
+    await ctx.send("🎲 **NSFW Pools (8 random):**\n" + ", ".join(nsfw_randoms) +
+                   "\n\n🎲 **Hentai Pools (7 random):**\n" + ", ".join(hentai_randoms))
 
 # --- Flask server ---
 app = Flask("")
@@ -368,5 +361,5 @@ while True:
     try:
         client.run(user_token, log_handler=None)
     except Exception as e:
-        print(f"[Discord Fatal] {e}")
-        time.sleep(10)
+        print(f"[Discord Error] {e}")
+    time.sleep(5)
