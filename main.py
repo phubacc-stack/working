@@ -303,6 +303,39 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
     await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
 
 @client.command()
+async def autosub(ctx, subreddit: str, seconds: int = 30, content_type: str = "img"):
+    """Auto post from a specific subreddit"""
+    global auto_tasks
+    if seconds < 2:  # ⬅️ lowered from 5 to 2
+        await ctx.send("⚠️ Minimum 2 seconds.")
+        return
+    if content_type not in ["img", "gif", "vid", "random"]:
+        await ctx.send("⚠️ Type must be img | gif | vid | random.")
+        return
+    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+        await ctx.send("⚠️ Auto already running here.")
+        return
+
+    async def auto_loop(channel):
+        while True:
+            try:
+                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
+                posts = get_filtered_posts(subreddit, ctype)
+                if posts:
+                    for url in posts[:2]:
+                        await send_with_gallery_support(channel, url)
+                await asyncio.sleep(seconds)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[AutoSub Error] {e}")
+                await asyncio.sleep(5)
+
+    task = asyncio.create_task(auto_loop(ctx.channel))
+    auto_tasks[ctx.channel.id] = task
+    await ctx.send(f"▶️ AutoSub started: r/{subreddit} every {seconds}s for {content_type}.")
+
+@client.command()
 async def autostop(ctx):
     if ctx.channel.id in auto_tasks:
         auto_tasks[ctx.channel.id].cancel()
@@ -315,51 +348,26 @@ async def stats(ctx):
     uptime = datetime.now(timezone.utc) - start_time
     await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
-@client.command()
-async def uptime(ctx):
-    uptime = datetime.now(timezone.utc) - start_time
-    await ctx.send(f"⏱️ Uptime: {uptime}")
-
-@client.command()
-async def search(ctx, *, keyword: str):
-    global post_counter
-    posts = []
-    try:
-        results = reddit.subreddits.search_by_name(keyword, include_nsfw=True)
-        for sub in results:
-            posts.extend(get_filtered_posts(sub.display_name, "img"))
-    except Exception as e:
-        await ctx.send(f"❌ Search error: {e}")
-        return
-    if posts:
-        for url in posts[:10]:
-            await send_with_gallery_support(ctx.channel, url)
-    else:
-        await ctx.send("❌ No results.")
-
-@client.command()
-async def pools(ctx):
-    nsfw_randoms = pyrandom.sample(nsfw_pool, 8)
-    hentai_randoms = pyrandom.sample(hentai_pool, 7)
-    await ctx.send("🎲 **NSFW Pools (8 random):**\n" + ", ".join(nsfw_randoms) +
-                   "\n\n🎲 **Hentai Pools (7 random):**\n" + ", ".join(hentai_randoms))
-
-# --- Flask server ---
+# --- Keepalive Ping ---
 app = Flask("")
 
 @app.route("/")
 def home():
-    return "Bot is running!"
+    return "Bot is alive."
 
-def run_server():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+def run():
+    app.run(host="0.0.0.0", port=8080)
 
-threading.Thread(target=run_server).start()
+def ping():
+    while True:
+        try:
+            requests.get(service_url)
+        except:
+            pass
+        time.sleep(600)
 
-# --- Run bot ---
-while True:
-    try:
-        client.run(user_token, log_handler=None)
-    except Exception as e:
-        print(f"[Discord Error] {e}")
-    time.sleep(5)
+threading.Thread(target=run).start()
+threading.Thread(target=ping, daemon=True).start()
+
+# --- Run Bot ---
+client.run(user_token)
