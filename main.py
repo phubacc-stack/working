@@ -15,7 +15,7 @@ import html
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.2-gallery-trickle'
+version = 'v5.1-gallery-trickle'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -69,16 +69,20 @@ nsfw_pool = [
     "RealGirlsGW", "GoneWildPlus", "Curvy", "ThickChixxx",
     "AmateurMILFs", "HotMILFs", "CheatingWives", "PetiteGirls",
     "StackedGoneWild", "WifeSharing", "AmateurCumsluts",
-    "SexyTummies",
+    "SexyTummies", "GoneWildScrubs", "TightShirts", "UnderwearGW",
+    "YogaPants", "NSFW_HTML5", "BustyPetites", "TittyDropGIFs",
+    "PerfectAsses", "TrueAnal", "DeepFacials", "HardcoreAmateurs",
+    "OnlyFansGirls", "OnlyFansNSFW", "ThickChicks", "GoneWild18",
+    "BimboGirls", "NSFW_Selfies", "BigAsses", "NSFW_Snap", "Ofaces",
+    "AmateurWives", "ExhibitionistSex", "ShowerGirls", "BedroomAmateurs",
+    "NSFW_Galleries", "SexyAsians", "ThickLatinas", "BustyAmateurs",
+    "EroticArt", "HomeMadeXXX", "SluttyGirls", "AmateurExposed",
+    "PawgHQ", "TittyTuesday", "GoneWildAudio", "ThickAndBusty",
+    "AmateurThreesomes", "AmateurCouples", "AmateurGirls",
+    "AmateurNudes", "AmateurExhibition", "BigBoobsAmateurs",
+    "BustyAmateurs", "CurvyAmateurs", "SexyLatinas", "SexyEbony",
+    "SexyRedheads", "SexyBlondes", "SexyBrunettes",
     # +20 extras
-    "GirlsInLeggings", "TightClothed", "SheerUnderwear", "HotwifeGW",
-    "AmateurThick", "RealSluts", "NSFWPanties", "StockingsGW",
-    "CollegeSlutsGW", "PawgPorn", "ExposedCollege", "SexyOfficeGirls",
-    "CumCoveredGirls", "CasualNudity", "NaturalTitties", "HotNudeAmateurs",
-    "BedroomExhibition", "AmateurXXXGirls", "SluttyExposed", "ThickAndCurvy",
-    "SkinnyGirlsNSFW", "ThickAmateurs", "SluttyTattoos", "BustyRedheads",
-    "EbonyAmateurs", "BustyLatinasGW", "HornyWivesGW", "ChubbyNSFW",
-    "AmateurBody", "NSFW_Girls", "PawgGods", "ExhibitionistAmateurs",
     "NSFWWallpapers", "UncutPorn", "LingerieGW", "AmateurXXX",
     "BigTits", "GirlsFinishingJobs", "AnalOnly", "CumInMouth",
     "ThickAsians", "HotAmateurs", "NSFWCouples", "NaughtyAmateurs",
@@ -125,14 +129,6 @@ hentai_pool = [
     "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
     "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ",
     # +20 extras
-    "EcchiQueens", "LewdWaifuGallery", "AnimeEcchiGirls", "NSFWAnimeHQ",
-    "DoujinDelight", "AnimeWaifuPorn", "TentacleEcchi", "LewdAnimeHQ",
-    "EcchiBootyGirls", "AnimeBustyHQ", "LewdMangaGirls", "Rule34Ecchi",
-    "HentaiPerfection", "CartoonLewds", "SexyWaifusHQ", "NSFWHentaiDrops",
-    "EcchiWorlds", "LewdAnimeBooty", "Rule34HQ", "EcchiTiddies",
-    "AnimeGirlsLewd", "HentaiDreams", "LewdDoujinshi", "EcchiParadiseHQ",
-    "NSFWAnimeWorld", "CartoonLewdArt", "AnimeLewdPerfection",
-    "EcchiTentacles", "AnimeCumsluts", "LewdFantasyHQ", "AnimePussyHQ",
     "NSFWManga", "EcchiCosplay", "TentacleNSFW", "EcchiGirls",
     "LewdAnimeArt", "MonsterGirlHentai", "Rule34Anime", "DoujinWorlds",
     "CartoonEcchiNSFW", "AnimeSluts", "HentaiLovers", "WaifuPornNSFW",
@@ -157,7 +153,7 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
 
                 if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                     gallery_urls = []
-                    for item in list(post.media_metadata.values()):
+                    for item in list(post.media_metadata.values())[:25]:
                         if "s" in item and "u" in item["s"]:
                             gallery_url = html.unescape(item["s"]["u"])
                             if gallery_url not in seen_posts:
@@ -183,8 +179,10 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
                 pyrandom.shuffle(posts)
                 flat = []
                 for p in posts:
-                    flat.append(p)
-                    if not isinstance(p, list):
+                    if isinstance(p, list):
+                        flat.append(p)
+                    else:
+                        flat.append(p)
                         seen_posts.add(p)
                 posts = flat
                 if len(seen_posts) > 5000:
@@ -221,6 +219,9 @@ async def send_with_gallery_support(channel, item):
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
     global post_counter
+    if amount > 50:
+        amount = 50
+
     pool = nsfw_pool + hentai_pool
     collected = []
     tries = 0
@@ -245,6 +246,9 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
 @client.command()
 async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
     global post_counter
+    if amount > 50:
+        amount = 50
+
     collected = []
     tries = 0
     max_tries = amount * 3
@@ -267,8 +271,8 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
 @client.command()
 async def auto(ctx, seconds: int = 30, content_type: str = "img"):
     global auto_tasks
-    if seconds < 2:
-        await ctx.send("⚠️ Minimum 2 seconds.")
+    if seconds < 5:
+        await ctx.send("⚠️ Minimum 5 seconds.")
         return
     if content_type not in ["img", "gif", "vid", "random"]:
         await ctx.send("⚠️ Type must be img | gif | vid | random.")
@@ -299,69 +303,63 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
     await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
 
 @client.command()
-async def autosub(ctx, subreddit: str, seconds: int = 30, content_type: str = "img"):
-    global auto_tasks
-    if seconds < 2:
-        await ctx.send("⚠️ Minimum 2 seconds.")
-        return
-    if content_type not in ["img", "gif", "vid", "random"]:
-        await ctx.send("⚠️ Type must be img | gif | vid | random.")
-        return
-    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        await ctx.send("⚠️ Auto already running here.")
-        return
-
-    async def auto_loop(channel):
-        while True:
-            try:
-                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
-                posts = get_filtered_posts(subreddit, ctype)
-                if posts:
-                    for url in posts:
-                        await send_with_gallery_support(channel, url)
-                await asyncio.sleep(seconds)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[AutoSubLoop Error] {e}")
-                await asyncio.sleep(5)
-
-    task = asyncio.create_task(auto_loop(ctx.channel))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto started every {seconds}s from r/{subreddit} ({content_type}).")
-
-@client.command()
-async def stop(ctx):
-    global auto_tasks
-    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+async def autostop(ctx):
+    if ctx.channel.id in auto_tasks:
         auto_tasks[ctx.channel.id].cancel()
         await ctx.send("⏹️ Auto stopped.")
     else:
         await ctx.send("⚠️ No auto running here.")
 
 @client.command()
-async def pools(ctx):
-    await ctx.send(f"📦 NSFW pool size: {len(nsfw_pool)} | Hentai pool size: {len(hentai_pool)}")
+async def stats(ctx):
+    uptime = datetime.now(timezone.utc) - start_time
+    await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
 @client.command()
-async def stats(ctx):
-    global start_time, post_counter
+async def uptime(ctx):
     uptime = datetime.now(timezone.utc) - start_time
-    await ctx.send(f"📊 {version} | Uptime: {uptime} | Posts sent: {post_counter}")
+    await ctx.send(f"⏱️ Uptime: {uptime}")
 
-# --- Flask keepalive ---
+@client.command()
+async def search(ctx, *, keyword: str):
+    global post_counter
+    posts = []
+    try:
+        results = reddit.subreddits.search_by_name(keyword, include_nsfw=True)
+        for sub in results:
+            posts.extend(get_filtered_posts(sub.display_name, "img"))
+    except Exception as e:
+        await ctx.send(f"❌ Search error: {e}")
+        return
+    if posts:
+        for url in posts[:10]:
+            await send_with_gallery_support(ctx.channel, url)
+    else:
+        await ctx.send("❌ No results.")
+
+@client.command()
+async def pools(ctx):
+    nsfw_randoms = pyrandom.sample(nsfw_pool, 8)
+    hentai_randoms = pyrandom.sample(hentai_pool, 7)
+    await ctx.send("🎲 **NSFW Pools (8 random):**\n" + ", ".join(nsfw_randoms) +
+                   "\n\n🎲 **Hentai Pools (7 random):**\n" + ", ".join(hentai_randoms))
+
+# --- Flask server ---
 app = Flask("")
 
 @app.route("/")
 def home():
     return "Bot is running!"
 
-def run():
-    app.run(host="0.0.0.0", port=8080)
+def run_server():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
-def keep_alive():
-    t = threading.Thread(target=run)
-    t.start()
+threading.Thread(target=run_server).start()
 
-keep_alive()
-client.run(user_token, bot=False)
+# --- Run bot ---
+while True:
+    try:
+        client.run(user_token, log_handler=None)
+    except Exception as e:
+        print(f"[Discord Error] {e}")
+    time.sleep(5)
