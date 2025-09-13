@@ -128,26 +128,59 @@ hentai_pool = [
     "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai",
     "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
     "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ",
-    # +20 extras
     "NSFWManga", "EcchiCosplay", "TentacleNSFW", "EcchiGirls",
     "LewdAnimeArt", "MonsterGirlHentai", "Rule34Anime", "DoujinWorlds",
     "CartoonEcchiNSFW", "AnimeSluts", "HentaiLovers", "WaifuPornNSFW",
     "HentaiDrops", "NSFW_Anime", "AnimeXXX", "AnimeLewdGirls",
-    "EcchiFantasy", "Rule34AnimeNSFW", "DoujinFans", "AnimeNudesHQ", "Rule34Disney", "WesternHentai", "CartoonNSFW", "CartoonPorn",
-    "CartoonRule34NSFW", "Rule34Comics", "DisneyNSFW", "PixarNSFW",
-    "TotalDramaNSFW", "Ben10NSFW", "FamilyGuyNSFW", "AmericanDadNSFW",
-    "SimpsonsNSFW", "CartoonSmut", "WesternCartoonPorn", "CartoonPornHQ",
-    "CartoonNudes", "DisneyRule34", "AnimatedNSFW", "ToonNSFW",
-    "CartoonXXX", "CartoonSex",
-    "Cartoon_R34", "rule34_comics", "sex_comics", "hentai_comics",
-    "NSFWcomics", "PornComix", "NSFWwebcomics",
-    "CowgirlRiding", "ReverseCowgirl", "RidingDicks", "GirlsRiding",
-    "OnTop", "CowgirlNSFW", "AnalRiding", "HardcorePorn", "RealPorn",
-    "HardcoreNSFW", "RoughSex", "HardcoreFucking", "HardcoreAmateurPorn",
-    "PoundingHer", "FuckingHerHard", "ThroatFucking", "HardcoreDoggy",
-    "MissionaryNSFW", "AnalOnlyFans",
- "DeepInsertion"
+    "EcchiFantasy", "Rule34AnimeNSFW", "DoujinFans", "AnimeNudesHQ",
+    "Rule34Disney", "WesternHentai", "CartoonNSFW", "CartoonPorn",
+    "CartoonRule34NSFW", "Rule34Comics", "DisneyNSFW", "PixarNSFW",
+    "TotalDramaNSFW", "Ben10NSFW", "FamilyGuyNSFW", "AmericanDadNSFW",
+    "SimpsonsNSFW", "CartoonSmut", "WesternCartoonPorn", "CartoonPornHQ",
+    "CartoonNudes", "DisneyRule34", "AnimatedNSFW", "ToonNSFW",
+    "CartoonXXX", "CartoonSex", "Cartoon_R34", "rule34_comics",
+    "sex_comics", "hentai_comics", "NSFWcomics", "PornComix",
+    "NSFWwebcomics", "CowgirlRiding", "ReverseCowgirl", "RidingDicks",
+    "GirlsRiding", "OnTop", "CowgirlNSFW", "AnalRiding", "HardcorePorn",
+    "RealPorn", "HardcoreNSFW", "RoughSex", "HardcoreFucking",
+    "HardcoreAmateurPorn", "PoundingHer", "FuckingHerHard",
+    "ThroatFucking", "HardcoreDoggy", "MissionaryNSFW", "AnalOnlyFans",
+    "DeepInsertion",
+
+    # 🔥 EXTENDED MEGA DROP
+    "PantyHentai", "StockingHentai", "EcchiFeet", "BigBoobsHentai",
+    "AnimeFacesitting", "TentacleGirls", "NekoHentai", "ElfHentai",
+    "SuccubusHentai", "SchoolgirlNSFW", "CheerleaderHentai",
+    "NurseHentai", "MaidNSFW", "BunnyGirlHentai", "GothHentai",
+    "BBWAnime", "ChubbyHentai", "FemboyHentai", "TrapHentai",
+    "YaoiHentai", "ShotaNSFW", "LoliNSFW", "MonsterGirlXXX",
+    "AnimeGangbang", "AnimeCreampie", "UncensoredDoujin",
+    "AnimeThreesome", "AnimeOrgy", "HentaiFacials", "HentaiCumshots",
+    "BigTiddyAnimeGirls", "AnimeDominatrix", "AnimeBondageXXX",
+    "Rule34Naruto", "Rule34Bleach", "Rule34OnePiece", "Rule34FairyTail",
+    "Rule34Pokemon", "Rule34Genshin", "Rule34Overwatch", "Rule34LoL",
+    "Rule34MHA", "Rule34DemonSlayer", "Rule34Evangelion", "Rule34RWBY",
+    "Rule34Fate", "Rule34DBZ", "Rule34Inuyasha", "Rule34SailorMoon",
+    "Rule34NeonGenesis", "Rule34ToLoveRu", "Rule34KillLaKill",
+    "Rule34Konosuba", "Rule34ReZero", "Rule34BlackClover",
+    "Rule34CodeGeass", "Rule34Persona", "Rule34Nier", "Rule34FinalFantasy",
+    "Rule34Avatar", "Rule34Disney", "Rule34Pixar", "Rule34CartoonHQ",
+    "Rule34LooneyTunes", "Rule34TeenTitans", "Rule34Ben10",
+    "Rule34FamilyGuy", "Rule34Simpsons", "Rule34AmericanDad",
+    "Rule34TotalDrama", "Rule34GravityFalls", "Rule34KimPossible",
+    "Rule34DannyPhantom", "Rule34PhineasFerb", "Rule34ScoobyDoo",
+    "Rule34RegularShow", "Rule34Sonic", "Rule34Mario", "Rule34Zelda",
+    "Rule34Metroid", "Rule34Kirby", "Rule34Minecraft", "Rule34Roblox",
+    "Rule34Fortnite", "Rule34CallOfDuty", "Rule34Halo", "Rule34Overcooked",
+    "Rule34AmongUs", "Rule34FallGuys", "Rule34Cuphead", "Rule34Undertale",
+    "Rule34FNAF", "Rule34Bendy", "Rule34PokemonGirls", "Rule34AnimeGirls",
+    "Rule34Waifus", "Rule34MonsterGirls", "Rule34Succubus", "Rule34Tentacle",
+    "Rule34BBW", "Rule34Elf", "Rule34Catgirl", "Rule34Neko",
+    "Rule34Cheerleader", "Rule34Nurse", "Rule34Schoolgirl", "Rule34Goth",
+
+    # keep stacking until we break 2000+...
 ]
+
 
 # --- Helper: Get unique posts (handles galleries) ---
 def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
@@ -384,3 +417,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+
