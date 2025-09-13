@@ -15,26 +15,31 @@ import html
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = "v6.0-nsfw-master"
+version = 'v5.1-gallery-trickle'
+start_time = datetime.now(timezone.utc)
+post_counter = 0
+seen_posts = set()
 
-# --- Flask keep-alive server ---
-app = Flask(__name__)
+# --- Discord Environment Variables ---
+user_token = os.getenv("user_token")
+service_url = os.getenv("SERVICE_URL")
 
-@app.route('/')
-def home():
-    return "Bot is alive!"
+if not user_token:
+    print("[ERROR] Missing environment variable: user_token")
+    sys.exit(1)
+if not service_url:
+    service_url = "https://working-1-uy7j.onrender.com"
 
-def run():
-    app.run(host="0.0.0.0", port=8080)
+# --- Reddit API setup (praw) ---
+reddit = praw.Reddit(
+    client_id="lQ_-b50YbnuDiL_uC6B7OQ",
+    client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
+    user_agent="NsfwDiscordBot/1.0"
+)
 
-def keep_alive():
-    t = threading.Thread(target=run)
-    t.start()
+client = commands.Bot(command_prefix="!")
 
-# --- Discord Setup ---
-bot = commands.Bot(command_prefix="!")
-
-# --- Pools (from original) ---
+# --- Subreddit Pools (expanded +20 each) ---
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -77,6 +82,7 @@ nsfw_pool = [
     "AmateurNudes", "AmateurExhibition", "BigBoobsAmateurs",
     "BustyAmateurs", "CurvyAmateurs", "SexyLatinas", "SexyEbony",
     "SexyRedheads", "SexyBlondes", "SexyBrunettes",
+    # +20 extras
     "NSFWWallpapers", "UncutPorn", "LingerieGW", "AmateurXXX",
     "BigTits", "GirlsFinishingJobs", "AnalOnly", "CumInMouth",
     "ThickAsians", "HotAmateurs", "NSFWCouples", "NaughtyAmateurs",
@@ -122,221 +128,259 @@ hentai_pool = [
     "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai",
     "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
     "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ",
+    # +20 extras
     "NSFWManga", "EcchiCosplay", "TentacleNSFW", "EcchiGirls",
     "LewdAnimeArt", "MonsterGirlHentai", "Rule34Anime", "DoujinWorlds",
     "CartoonEcchiNSFW", "AnimeSluts", "HentaiLovers", "WaifuPornNSFW",
     "HentaiDrops", "NSFW_Anime", "AnimeXXX", "AnimeLewdGirls",
-    "EcchiFantasy", "Rule34AnimeNSFW", "DoujinFans", "AnimeNudesHQ"
+    "EcchiFantasy", "Rule34AnimeNSFW", "DoujinFans", "AnimeNudesHQ", "Rule34Disney", "WesternHentai", "CartoonNSFW", "CartoonPorn",
+    "CartoonRule34NSFW", "Rule34Comics", "DisneyNSFW", "PixarNSFW",
+    "TotalDramaNSFW", "Ben10NSFW", "FamilyGuyNSFW", "AmericanDadNSFW",
+    "SimpsonsNSFW", "CartoonSmut", "WesternCartoonPorn", "CartoonPornHQ",
+    "CartoonNudes", "DisneyRule34", "AnimatedNSFW", "ToonNSFW",
+    "CartoonXXX", "CartoonSex",
+    "Cartoon_R34", "rule34_comics", "sex_comics", "hentai_comics",
+    "NSFWcomics", "PornComix", "NSFWwebcomics",
+    "CowgirlRiding", "ReverseCowgirl", "RidingDicks", "GirlsRiding",
+    "OnTop", "CowgirlNSFW", "AnalRiding", "HardcorePorn", "RealPorn",
+    "HardcoreNSFW", "RoughSex", "HardcoreFucking", "HardcoreAmateurPorn",
+    "PoundingHer", "FuckingHerHard", "ThroatFucking", "HardcoreDoggy",
+    "MissionaryNSFW", "AnalOnlyFans",
+ "DeepInsertion"
 ]
 
-# --- Reddit API setup (praw) ---
-reddit = praw.Reddit(
-    client_id="lQ_-b50YbnuDiL_uC6B7OQ",
-    client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
-    user_agent="NsfwDiscordBot/1.0"
-)
+# --- Helper: Get unique posts (handles galleries) ---
+def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
+    global seen_posts
+    posts = []
+    for attempt in range(retries):
+        try:
+            subreddit = reddit.subreddit(subreddit_name)
+            fetch_method = pyrandom.choice(["hot", "new", "top"])
+            listings = getattr(subreddit, fetch_method)(limit=limit)
 
-# --- Fetchers ---
-async def fetch_reddit(subreddit_name):
-    try:
-        posts = list(reddit.subreddit(subreddit_name).hot(limit=50))
-        if not posts:
-            return None
-        post = pyrandom.choice(posts)
-        return post.url
-    except:
-        return None
+            for post in listings:
+                if post.stickied:
+                    continue
+                url = str(post.url)
 
-async def fetch_rule34(tag=None):
-    url = "https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1"
-    if tag:
-        url += f"&tags={tag}"
-    try:
-        resp = requests.get(url, timeout=10).json()
-        if not resp:
-            return None
-        post = pyrandom.choice(resp)
-        return post.get("file_url")
-    except:
-        return None
+                if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
+                    gallery_urls = []
+                    for item in list(post.media_metadata.values())[:25]:
+                        if "s" in item and "u" in item["s"]:
+                            gallery_url = html.unescape(item["s"]["u"])
+                            if gallery_url not in seen_posts:
+                                gallery_urls.append(gallery_url)
+                    if gallery_urls:
+                        posts.append(gallery_urls)
+                    continue
 
-async def fetch_gelbooru(tag=None):
-    url = "https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1"
-    if tag:
-        url += f"&tags={tag}"
-    try:
-        resp = requests.get(url, timeout=10).json()
-        if not resp:
-            return None
-        post = pyrandom.choice(resp)
-        return post.get("file_url")
-    except:
-        return None
+                if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
+                    continue
+                if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
+                    url = url + ".jpg"
 
-async def fetch_neko():
-    try:
-        resp = requests.get("https://nekos.life/api/v2/img/Random_hentai_gif").json()
-        return resp.get("url")
-    except:
-        return None
+                if (
+                    (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
+                    or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
+                    or (content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url))
+                ):
+                    if url not in seen_posts:
+                        posts.append(url)
 
-async def fetch_redgif_random():
-    try:
-        resp = requests.get("https://api.redgifs.com/v2/gifs/random").json()
-        return resp.get("gif", {}).get("urls", {}).get("hd")
-    except:
-        return None
+            if posts:
+                pyrandom.shuffle(posts)
+                flat = []
+                for p in posts:
+                    if isinstance(p, list):
+                        flat.append(p)
+                    else:
+                        flat.append(p)
+                        seen_posts.add(p)
+                posts = flat
+                if len(seen_posts) > 5000:
+                    seen_posts.clear()
+                break
 
-async def fetch_redgif_search(tag):
-    try:
-        resp = requests.get(f"https://api.redgifs.com/v2/gifs/search?search_text={tag}&order=trending").json()
-        gifs = resp.get("gifs", [])
-        if not gifs:
-            return None
-        post = pyrandom.choice(gifs)
-        return post.get("urls", {}).get("hd")
-    except:
-        return None
+        except Exception as e:
+            print(f"[Reddit Error] r/{subreddit_name} attempt {attempt+1}: {e}")
+            time.sleep(1)
 
-async def fetch_redgif_user(username):
-    try:
-        resp = requests.get(f"https://api.redgifs.com/v2/users/{username}/gifs").json()
-        gifs = resp.get("gifs", [])
-        if not gifs:
-            return None
-        post = pyrandom.choice(gifs)
-        return post.get("urls", {}).get("hd")
-    except:
-        return None
+    return posts
 
-# --- Tasks (autos) ---
+# --- Auto System ---
 auto_tasks = {}
 
-async def auto_poster(ctx, fetcher, delay, *args):
-    while True:
-        url = await fetcher(*args)
-        if url:
-            await ctx.send(url)
-        await asyncio.sleep(max(2, delay))
+async def safe_send(channel, url):
+    try:
+        await channel.send(url)
+    except Exception as e:
+        print(f"[Discord Error] Failed to send: {e}")
 
-def stop_task(ctx_id):
-    task = auto_tasks.get(ctx_id)
-    if task:
-        task.cancel()
-        del auto_tasks[ctx_id]
+async def send_with_gallery_support(channel, item):
+    global post_counter
+    if isinstance(item, list):
+        for url in item:
+            await safe_send(channel, url)
+            post_counter += 1
+            await asyncio.sleep(2)
+    else:
+        await safe_send(channel, item)
+        post_counter += 1
 
 # --- Commands ---
-@bot.command()
-async def helpnsfw(ctx):
-    commands_list = [
-        "**Reddit:** !search <sub>, !autosub <sub> <delay>, !autostop",
-        "**Rule34:** !r34 <tag>, !autor34 <tag> <delay>, !autostopr34",
-        "**Gelbooru:** !gel <tag>, !autogel <tag> <delay>, !autostopgel",
-        "**Nekos:** !nekonsfw, !autoneko <delay>, !autostopneko",
-        "**RedGifs:** !redgif, !redgifsearch <tag>, !redgifuser <name>, !autoreddgif <delay>, !autostopredgif"
-    ]
-    await ctx.send("\n".join(commands_list))
+@client.command()
+async def r(ctx, amount: int = 1, content_type: str = "img"):
+    global post_counter
+    if amount > 50:
+        amount = 50
 
-# Reddit
-@bot.command()
-async def search(ctx, *, subreddit):
-    url = await fetch_reddit(subreddit)
-    await ctx.send(url or "No posts found.")
+    pool = nsfw_pool + hentai_pool
+    collected = []
+    tries = 0
+    max_tries = amount * 3
 
-@bot.command()
-async def autosub(ctx, subreddit, delay: int):
-    stop_task(ctx.channel.id)
-    task = asyncio.create_task(auto_poster(ctx, fetch_reddit, delay, subreddit))
+    while len(collected) < amount and tries < max_tries:
+        sub = pyrandom.choice(pool)
+        posts = get_filtered_posts(sub, content_type)
+        if posts:
+            for url in posts:
+                if len(collected) >= amount:
+                    break
+                collected.append(url)
+        tries += 1
+
+    if collected:
+        for item in collected:
+            await send_with_gallery_support(ctx.channel, item)
+    else:
+        await ctx.send("❌ No posts found.")
+
+@client.command()
+async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
+    global post_counter
+    if amount > 50:
+        amount = 50
+
+    collected = []
+    tries = 0
+    max_tries = amount * 3
+
+    while len(collected) < amount and tries < max_tries:
+        posts = get_filtered_posts(subreddit, content_type)
+        if posts:
+            for url in posts:
+                if len(collected) >= amount:
+                    break
+                collected.append(url)
+        tries += 1
+
+    if collected:
+        for item in collected:
+            await send_with_gallery_support(ctx.channel, item)
+    else:
+        await ctx.send("❌ No posts found.")
+
+@client.command()
+async def auto(ctx, seconds: int = 30, content_type: str = "img"):
+    global auto_tasks
+    if seconds < 5:
+        await ctx.send("⚠️ Minimum 5 seconds.")
+        return
+    if content_type not in ["img", "gif", "vid", "random"]:
+        await ctx.send("⚠️ Type must be img | gif | vid | random.")
+        return
+    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+        await ctx.send("⚠️ Auto already running here.")
+        return
+
+    async def auto_loop(channel):
+        while True:
+            try:
+                pool = nsfw_pool + hentai_pool
+                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
+                sub = pyrandom.choice(pool)
+                posts = get_filtered_posts(sub, ctype)
+                if posts:
+                    for url in posts[:2]:
+                        await send_with_gallery_support(channel, url)
+                await asyncio.sleep(seconds)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[AutoLoop Error] {e}")
+                await asyncio.sleep(5)
+
+    task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"Auto-posting from r/{subreddit} every {delay}s.")
+    await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
 
-@bot.command()
+@client.command()
+async def autosub(ctx, subreddit: str, seconds: int = 30, content_type: str = "img"):
+    """Auto post from a specific subreddit"""
+    global auto_tasks
+    if seconds < 2:  # ⬅️ lowered from 5 to 2
+        await ctx.send("⚠️ Minimum 2 seconds.")
+        return
+    if content_type not in ["img", "gif", "vid", "random"]:
+        await ctx.send("⚠️ Type must be img | gif | vid | random.")
+        return
+    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+        await ctx.send("⚠️ Auto already running here.")
+        return
+
+    async def auto_loop(channel):
+        while True:
+            try:
+                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
+                posts = get_filtered_posts(subreddit, ctype)
+                if posts:
+                    for url in posts[:2]:
+                        await send_with_gallery_support(channel, url)
+                await asyncio.sleep(seconds)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[AutoSub Error] {e}")
+                await asyncio.sleep(5)
+
+    task = asyncio.create_task(auto_loop(ctx.channel))
+    auto_tasks[ctx.channel.id] = task
+    await ctx.send(f"▶️ AutoSub started: r/{subreddit} every {seconds}s for {content_type}.")
+
+@client.command()
 async def autostop(ctx):
-    stop_task(ctx.channel.id)
-    await ctx.send("Stopped auto Reddit.")
+    if ctx.channel.id in auto_tasks:
+        auto_tasks[ctx.channel.id].cancel()
+        await ctx.send("⏹️ Auto stopped.")
+    else:
+        await ctx.send("⚠️ No auto running here.")
 
-# Rule34
-@bot.command()
-async def r34(ctx, *, tag=None):
-    url = await fetch_rule34(tag)
-    await ctx.send(url or "Nothing found.")
+@client.command()
+async def stats(ctx):
+    uptime = datetime.now(timezone.utc) - start_time
+    await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
-@bot.command()
-async def autor34(ctx, tag, delay: int):
-    stop_task(ctx.channel.id)
-    task = asyncio.create_task(auto_poster(ctx, fetch_rule34, delay, tag))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"Auto Rule34 {tag} every {delay}s.")
+# --- Keepalive Ping ---
+app = Flask("")
 
-@bot.command()
-async def autostopr34(ctx):
-    stop_task(ctx.channel.id)
-    await ctx.send("Stopped auto Rule34.")
+@app.route("/")
+def home():
+    return "Bot is alive."
 
-# Gelbooru
-@bot.command()
-async def gel(ctx, *, tag=None):
-    url = await fetch_gelbooru(tag)
-    await ctx.send(url or "Nothing found.")
+def run():
+    app.run(host="0.0.0.0", port=8080)
 
-@bot.command()
-async def autogel(ctx, tag, delay: int):
-    stop_task(ctx.channel.id)
-    task = asyncio.create_task(auto_poster(ctx, fetch_gelbooru, delay, tag))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"Auto Gelbooru {tag} every {delay}s.")
+def ping():
+    while True:
+        try:
+            requests.get(service_url)
+        except:
+            pass
+        time.sleep(600)
 
-@bot.command()
-async def autostopgel(ctx):
-    stop_task(ctx.channel.id)
-    await ctx.send("Stopped auto Gelbooru.")
+threading.Thread(target=run).start()
+threading.Thread(target=ping, daemon=True).start()
 
-# Nekos
-@bot.command()
-async def nekonsfw(ctx):
-    url = await fetch_neko()
-    await ctx.send(url or "Nothing found.")
-
-@bot.command()
-async def autoneko(ctx, delay: int):
-    stop_task(ctx.channel.id)
-    task = asyncio.create_task(auto_poster(ctx, lambda: fetch_neko(), delay))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"Auto Nekos every {delay}s.")
-
-@bot.command()
-async def autostopneko(ctx):
-    stop_task(ctx.channel.id)
-    await ctx.send("Stopped auto Nekos.")
-
-# RedGifs
-@bot.command()
-async def redgif(ctx):
-    url = await fetch_redgif_random()
-    await ctx.send(url or "Nothing found.")
-
-@bot.command()
-async def redgifsearch(ctx, *, tag):
-    url = await fetch_redgif_search(tag)
-    await ctx.send(url or "Nothing found.")
-
-@bot.command()
-async def redgifuser(ctx, *, username):
-    url = await fetch_redgif_user(username)
-    await ctx.send(url or "Nothing found.")
-
-@bot.command()
-async def autoreddgif(ctx, delay: int):
-    stop_task(ctx.channel.id)
-    task = asyncio.create_task(auto_poster(ctx, fetch_redgif_random, delay))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"Auto RedGifs every {delay}s.")
-
-@bot.command()
-async def autostopredgif(ctx):
-    stop_task(ctx.channel.id)
-    await ctx.send("Stopped auto RedGifs.")
-
-# --- Run ---
-keep_alive()
-bot.run(os.environ["user_token"])
+# --- Run Bot ---
+client.run(user_token)
