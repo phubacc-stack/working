@@ -3,7 +3,7 @@ import sys
 import asyncio
 import random as pyrandom
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import threading
 from flask import Flask
 import requests
@@ -15,359 +15,236 @@ import html
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.1-gallery-trickle'
-start_time = datetime.now(timezone.utc)
-post_counter = 0
-seen_posts = set()
+version = "v6.0-nsfw-master"
 
-# --- Discord Environment Variables ---
-user_token = os.getenv("user_token")
-service_url = os.getenv("SERVICE_URL")
+# --- Flask keep-alive server ---
+app = Flask(__name__)
 
-if not user_token:
-    print("[ERROR] Missing environment variable: user_token")
-    sys.exit(1)
-if not service_url:
-    service_url = "https://working-1-uy7j.onrender.com"
-
-# --- Reddit API setup (praw) ---
-reddit = praw.Reddit(
-    client_id="lQ_-b50YbnuDiL_uC6B7OQ",
-    client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
-    user_agent="NsfwDiscordBot/1.0"
-)
-
-client = commands.Bot(command_prefix="!")
-
-# --- Subreddit Pools (expanded +20 each) ---
-nsfw_pool = [
-    "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
-    "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
-    "Amateur", "nsfwhardcore", "Blowjobs", "gwcumsluts", "pawg",
-    "chickswithtattoos", "PetiteGoneWild", "cumsluts", "thick",
-    "nsfwbikinis", "OnOff", "smalltits", "BigBoobsGW", "HighResNSFW",
-    "GirlsFinishingTheJob", "palegirls", "TheUnderbun", "workgonewild",
-    "justthetip", "60fpsporn", "porninfifteenseconds", "cuckold",
-    "anal", "blowjobsandwich", "tightdresses", "leggingsgonewild",
-    "SuicideGirls", "nsfwoutfits", "ToplessInJeans", "publicplug",
-    "workoutgonewild", "Hotwife", "MomsGoneWild", "milf",
-    "hotchickswithtattoos", "nsfwcosplay", "BDSMGW", "pussy",
-    "squirting_gifs", "thickwhitegirls", "slutwife", "PornStars",
-    "PerfectPussies", "SexyGirlsInBoots", "Blonde", "nsfwart",
-    "rearpussy", "MatureMilfs", "analgw", "thickasses", "Stacked",
-    "Assholes", "GirlsWithBigToys", "O_Faces", "GirlsInYogaPants",
-    "NSFW_GIF", "TrueAmateurs", "AltGoneWild", "brunette",
-    "redheads", "legalteensxxx", "fitgirls", "boobies",
-    "asstastic", "NSFWVideos", "DeepThroat", "gonewildcurvy",
-    "DirtyGaming", "nsfw_college", "facials", "hugeboobs",
-    "Upskirt", "ThickFit", "NSFWFunny", "hairypussy",
-    "NaughtyWives", "cumcovered", "ebony", "Latinas",
-    "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild",
-    "trainerfucks", "AmateurPorn", "Exxxtras", "BustyNaturals",
-    "TittyDrop", "TheGape", "WorkGoneWild", "Nudes", "Rule34LoL",
-    "NotSafeForWork", "LegalTeens", "CollegeAmateurs", "GoneErotic",
-    "RealGirlsGW", "GoneWildPlus", "Curvy", "ThickChixxx",
-    "AmateurMILFs", "HotMILFs", "CheatingWives", "PetiteGirls",
-    "StackedGoneWild", "WifeSharing", "AmateurCumsluts",
-    "SexyTummies", "GoneWildScrubs", "TightShirts", "UnderwearGW",
-    "YogaPants", "NSFW_HTML5", "BustyPetites", "TittyDropGIFs",
-    "PerfectAsses", "TrueAnal", "DeepFacials", "HardcoreAmateurs",
-    "OnlyFansGirls", "OnlyFansNSFW", "ThickChicks", "GoneWild18",
-    "BimboGirls", "NSFW_Selfies", "BigAsses", "NSFW_Snap", "Ofaces",
-    "AmateurWives", "ExhibitionistSex", "ShowerGirls", "BedroomAmateurs",
-    "NSFW_Galleries", "SexyAsians", "ThickLatinas", "BustyAmateurs",
-    "EroticArt", "HomeMadeXXX", "SluttyGirls", "AmateurExposed",
-    "PawgHQ", "TittyTuesday", "GoneWildAudio", "ThickAndBusty",
-    "AmateurThreesomes", "AmateurCouples", "AmateurGirls",
-    "AmateurNudes", "AmateurExhibition", "BigBoobsAmateurs",
-    "BustyAmateurs", "CurvyAmateurs", "SexyLatinas", "SexyEbony",
-    "SexyRedheads", "SexyBlondes", "SexyBrunettes",
-    # +20 extras
-    "NSFWWallpapers", "UncutPorn", "LingerieGW", "AmateurXXX",
-    "BigTits", "GirlsFinishingJobs", "AnalOnly", "CumInMouth",
-    "ThickAsians", "HotAmateurs", "NSFWCouples", "NaughtyAmateurs",
-    "TittyDropPorn", "AssWorship", "MILF_NSFW", "ThickCurvy",
-    "PetiteNSFW", "AmateurFacials", "ExposedAmateurs", "SluttyAmateurs"
-]
-
-hentai_pool = [
-    "hentai", "rule34", "AnimeBooty", "thick_hentai", "ahegao",
-    "ecchi", "hentaibondage", "oppai_gif", "HQHentai", "HentaiGIF",
-    "NarutoHentai", "DragonBallHentai", "PokemonNSFW", "DisneyNSFW",
-    "OverwatchNSFW", "OnePieceHentai", "AnimeArmpits", "BigAnimeTiddies",
-    "MaidHentai", "MonsterGirls", "hentai_gifs", "HentaiBlowjobs",
-    "thighhighs", "animelegs", "Tentai", "HentaiAnal", "futa",
-    "UncensoredHentai", "YuriNSFW", "AnimeMILFS", "WaifuPorn",
-    "hentaiass", "ecchiGIFs", "TouhouNSFW", "BDSMhentai",
-    "DragonBallZNSFW", "NarutoRule34", "FairyTailNSFW", "BleachNSFW",
-    "DigimonNSFW", "HentaiThighs", "HentaiPetgirls",
-    "LeagueOfLegendsNSFW", "GenshinImpactNSFW", "SailorMoonNSFW",
-    "EvangelionNSFW", "FateHentai", "OverwatchHentai", "RWBYNSFW",
-    "AvatarNSFW", "KantaiCollectionNSFW", "ReZeroNSFW", "KonosubaNSFW",
-    "MyHeroHentai", "DemonSlayerHentai", "OnePunchManNSFW",
-    "AttackOnTitanNSFW", "InuyashaNSFW", "CodeGeassNSFW",
-    "BlackCloverNSFW", "BorutoHentai", "YuGiOhNSFW", "KillLaKillNSFW",
-    "PersonaNSFW", "NierNSFW", "FinalFantasyNSFW", "DisneyHentai",
-    "CartoonHentai", "GravityFallsNSFW", "KimPossibleNSFW",
-    "TeenTitansNSFW", "ScoobyDooNSFW", "LooneyTunesNSFW",
-    "RegularShowNSFW", "TotalDramaNSFW", "DannyPhantomNSFW",
-    "PhineasAndFerbNSFW", "ecchibabes", "rule34cartoons",
-    "LewdAnimeGirls", "OppaiHentai", "AnimeNsfw", "BunnyGirlsNSFW",
-    "WaifuNsfw", "HentaiHQ", "AnimeEcchi", "nsfwanimegifs",
-    "EcchiHentai", "HentaiCouples", "ShotaHentai", "MonsterGirlNSFW",
-    "DoujinHentai", "HentaiThicc", "UncensoredEcchi", "LewdHentai",
-    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
-    "Rule34Cartoon", "EcchiParadise", "LewdCartoons", "AnimeThighs",
-    "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch",
-    "EcchiParadise", "LewdWaifu", "WaifuNSFW", "AnimeBooties",
-    "MonsterHentai", "EcchiWorld", "TentacleHentai", "LewdFantasy",
-    "GamerGirlHentai", "FutaHentai", "YuriHentai", "BondageHentai",
-    "DoujinNsfw", "Rule34Hentai", "AnimePussy", "AnimeBoobs",
-    "CartoonPorn", "AnimeLewds", "Rule34Cartoons", "UncensoredHentaiGIFs",
-    "AnimeNudes", "LewdHentaiGirls", "EcchiBooty", "AnimeAhegao",
-    "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai",
-    "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
-    "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ",
-    # +20 extras
-    "NSFWManga", "EcchiCosplay", "TentacleNSFW", "EcchiGirls",
-    "LewdAnimeArt", "MonsterGirlHentai", "Rule34Anime", "DoujinWorlds",
-    "CartoonEcchiNSFW", "AnimeSluts", "HentaiLovers", "WaifuPornNSFW",
-    "HentaiDrops", "NSFW_Anime", "AnimeXXX", "AnimeLewdGirls",
-    "EcchiFantasy", "Rule34AnimeNSFW", "DoujinFans", "AnimeNudesHQ"
-]
-
-# --- Helper: Get unique posts (handles galleries) ---
-def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
-    global seen_posts
-    posts = []
-    for attempt in range(retries):
-        try:
-            subreddit = reddit.subreddit(subreddit_name)
-            fetch_method = pyrandom.choice(["hot", "new", "top"])
-            listings = getattr(subreddit, fetch_method)(limit=limit)
-
-            for post in listings:
-                if post.stickied:
-                    continue
-                url = str(post.url)
-
-                if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
-                    gallery_urls = []
-                    for item in list(post.media_metadata.values())[:25]:
-                        if "s" in item and "u" in item["s"]:
-                            gallery_url = html.unescape(item["s"]["u"])
-                            if gallery_url not in seen_posts:
-                                gallery_urls.append(gallery_url)
-                    if gallery_urls:
-                        posts.append(gallery_urls)
-                    continue
-
-                if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
-                    continue
-                if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
-                    url = url + ".jpg"
-
-                if (
-                    (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
-                    or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
-                    or (content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url))
-                ):
-                    if url not in seen_posts:
-                        posts.append(url)
-
-            if posts:
-                pyrandom.shuffle(posts)
-                flat = []
-                for p in posts:
-                    if isinstance(p, list):
-                        flat.append(p)
-                    else:
-                        flat.append(p)
-                        seen_posts.add(p)
-                posts = flat
-                if len(seen_posts) > 5000:
-                    seen_posts.clear()
-                break
-
-        except Exception as e:
-            print(f"[Reddit Error] r/{subreddit_name} attempt {attempt+1}: {e}")
-            time.sleep(1)
-
-    return posts
-
-# --- Auto System ---
-auto_tasks = {}
-
-async def safe_send(channel, url):
-    try:
-        await channel.send(url)
-    except Exception as e:
-        print(f"[Discord Error] Failed to send: {e}")
-
-async def send_with_gallery_support(channel, item):
-    global post_counter
-    if isinstance(item, list):
-        for url in item:
-            await safe_send(channel, url)
-            post_counter += 1
-            await asyncio.sleep(2)
-    else:
-        await safe_send(channel, item)
-        post_counter += 1
-
-# --- Commands ---
-@client.command()
-async def r(ctx, amount: int = 1, content_type: str = "img"):
-    global post_counter
-    if amount > 50:
-        amount = 50
-
-    pool = nsfw_pool + hentai_pool
-    collected = []
-    tries = 0
-    max_tries = amount * 3
-
-    while len(collected) < amount and tries < max_tries:
-        sub = pyrandom.choice(pool)
-        posts = get_filtered_posts(sub, content_type)
-        if posts:
-            for url in posts:
-                if len(collected) >= amount:
-                    break
-                collected.append(url)
-        tries += 1
-
-    if collected:
-        for item in collected:
-            await send_with_gallery_support(ctx.channel, item)
-    else:
-        await ctx.send("❌ No posts found.")
-
-@client.command()
-async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
-    global post_counter
-    if amount > 50:
-        amount = 50
-
-    collected = []
-    tries = 0
-    max_tries = amount * 3
-
-    while len(collected) < amount and tries < max_tries:
-        posts = get_filtered_posts(subreddit, content_type)
-        if posts:
-            for url in posts:
-                if len(collected) >= amount:
-                    break
-                collected.append(url)
-        tries += 1
-
-    if collected:
-        for item in collected:
-            await send_with_gallery_support(ctx.channel, item)
-    else:
-        await ctx.send("❌ No posts found.")
-
-@client.command()
-async def auto(ctx, seconds: int = 30, content_type: str = "img"):
-    global auto_tasks
-    if seconds < 5:
-        await ctx.send("⚠️ Minimum 5 seconds.")
-        return
-    if content_type not in ["img", "gif", "vid", "random"]:
-        await ctx.send("⚠️ Type must be img | gif | vid | random.")
-        return
-    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        await ctx.send("⚠️ Auto already running here.")
-        return
-
-    async def auto_loop(channel):
-        while True:
-            try:
-                pool = nsfw_pool + hentai_pool
-                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
-                sub = pyrandom.choice(pool)
-                posts = get_filtered_posts(sub, ctype)
-                if posts:
-                    for url in posts[:2]:
-                        await send_with_gallery_support(channel, url)
-                await asyncio.sleep(seconds)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[AutoLoop Error] {e}")
-                await asyncio.sleep(5)
-
-    task = asyncio.create_task(auto_loop(ctx.channel))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
-
-@client.command()
-async def autosub(ctx, subreddit: str, seconds: int = 30, content_type: str = "img"):
-    """Auto post from a specific subreddit"""
-    global auto_tasks
-    if seconds < 2:  # ⬅️ lowered from 5 to 2
-        await ctx.send("⚠️ Minimum 2 seconds.")
-        return
-    if content_type not in ["img", "gif", "vid", "random"]:
-        await ctx.send("⚠️ Type must be img | gif | vid | random.")
-        return
-    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        await ctx.send("⚠️ Auto already running here.")
-        return
-
-    async def auto_loop(channel):
-        while True:
-            try:
-                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
-                posts = get_filtered_posts(subreddit, ctype)
-                if posts:
-                    for url in posts[:2]:
-                        await send_with_gallery_support(channel, url)
-                await asyncio.sleep(seconds)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[AutoSub Error] {e}")
-                await asyncio.sleep(5)
-
-    task = asyncio.create_task(auto_loop(ctx.channel))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ AutoSub started: r/{subreddit} every {seconds}s for {content_type}.")
-
-@client.command()
-async def autostop(ctx):
-    if ctx.channel.id in auto_tasks:
-        auto_tasks[ctx.channel.id].cancel()
-        await ctx.send("⏹️ Auto stopped.")
-    else:
-        await ctx.send("⚠️ No auto running here.")
-
-@client.command()
-async def stats(ctx):
-    uptime = datetime.now(timezone.utc) - start_time
-    await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
-
-# --- Keepalive Ping ---
-app = Flask("")
-
-@app.route("/")
+@app.route('/')
 def home():
-    return "Bot is alive."
+    return "Bot is alive!"
 
 def run():
     app.run(host="0.0.0.0", port=8080)
 
-def ping():
-    while True:
-        try:
-            requests.get(service_url)
-        except:
-            pass
-        time.sleep(600)
+def keep_alive():
+    t = threading.Thread(target=run)
+    t.start()
 
-threading.Thread(target=run).start()
-threading.Thread(target=ping, daemon=True).start()
+# --- Discord Setup ---
+intents = discord.Intents.default()
+intents.messages = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- Run Bot ---
-client.run(user_token)
+# --- Pools (placeholders) ---
+nsfw_pool = [
+    "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
+    "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
+    "Amateur", "nsfwhardcore", "Blowjobs", "gwcumsluts", "pawg",
+    "chickswithtattoos", "PetiteGoneWild", "cumsluts", "thick",
+    "nsfwbikinis", "OnOff", "smalltits", "BigBoobsGW", "HighResNSFW",
+    "GirlsFinishingTheJob", "palegirls", "TheUnderbun", "workgonewild",
+    "justthetip", "60fpsporn", "porninfifteenseconds", "cuckold",
+    "anal", "blowjobsandwich", "tightdresses", "leggingsgonewild",
+    "SuicideGirls", "nsfwoutfits", "ToplessInJeans", "publicplug",
+    "workoutgonewild", "Hotwife", "MomsGoneWild", "milf",
+    "hotchickswithtattoos", "nsfwcosplay", "BDSMGW", "pussy",
+    "squirting_gifs", "thickwhitegirls", "slutwife", "PornStars",
+    "PerfectPussies", "SexyGirlsInBoots", "Blonde", "nsfwart",
+    "rearpussy", "MatureMilfs", "analgw", "thickasses", "Stacked",
+    "Assholes", "GirlsWithBigToys", "O_Faces", "GirlsInYogaPants",
+    "NSFW_GIF", "TrueAmateurs", "AltGoneWild", "brunette",
+    "redheads", "legalteensxxx", "fitgirls", "boobies",
+    "asstastic", "NSFWVideos", "DeepThroat", "gonewildcurvy",
+    "DirtyGaming", "nsfw_college", "facials", "hugeboobs",
+    "Upskirt", "ThickFit", "NSFWFunny", "hairypussy",
+    "NaughtyWives", "cumcovered", "ebony", "Latinas",
+    "nsfw_videos", "BiggerThanYouThought", "FutanariGoneWild",
+    "trainerfucks", "AmateurPorn", "Exxxtras", "BustyNaturals",
+    "TittyDrop", "TheGape", "WorkGoneWild", "Nudes", "Rule34LoL",
+    "NotSafeForWork", "LegalTeens", "CollegeAmateurs", "GoneErotic",
+    "RealGirlsGW", "GoneWildPlus", "Curvy", "ThickChixxx",
+    "AmateurMILFs", "HotMILFs", "CheatingWives", "PetiteGirls",
+    "StackedGoneWild", "WifeSharing", "AmateurCumsluts",
+    "SexyTummies", "GoneWildScrubs", "TightShirts", "UnderwearGW",
+    "YogaPants", "NSFW_HTML5", "BustyPetites", "TittyDropGIFs",
+    "PerfectAsses", "TrueAnal", "DeepFacials", "HardcoreAmateurs",
+    "OnlyFansGirls", "OnlyFansNSFW", "ThickChicks", "GoneWild18",
+    "BimboGirls", "NSFW_Selfies", "BigAsses", "NSFW_Snap", "Ofaces",
+    "AmateurWives", "ExhibitionistSex", "ShowerGirls", "BedroomAmateurs",
+    "NSFW_Galleries", "SexyAsians", "ThickLatinas", "BustyAmateurs",
+    "EroticArt", "HomeMadeXXX", "SluttyGirls", "AmateurExposed",
+    "PawgHQ", "TittyTuesday", "GoneWildAudio", "ThickAndBusty",
+    "AmateurThreesomes", "AmateurCouples", "AmateurGirls",
+    "AmateurNudes", "AmateurExhibition", "BigBoobsAmateurs",
+    "BustyAmateurs", "CurvyAmateurs", "SexyLatinas", "SexyEbony",
+    "SexyRedheads", "SexyBlondes", "SexyBrunettes",
+    # +20 extras
+    "NSFWWallpapers", "UncutPorn", "LingerieGW", "AmateurXXX",
+    "BigTits", "GirlsFinishingJobs", "AnalOnly", "CumInMouth",
+    "ThickAsians", "HotAmateurs", "NSFWCouples", "NaughtyAmateurs",
+    "TittyDropPorn", "AssWorship", "MILF_NSFW", "ThickCurvy",
+    "PetiteNSFW", "AmateurFacials", "ExposedAmateurs", "SluttyAmateurs"
+]
+
+hentai_pool = [
+    "hentai", "rule34", "AnimeBooty", "thick_hentai", "ahegao",
+    "ecchi", "hentaibondage", "oppai_gif", "HQHentai", "HentaiGIF",
+    "NarutoHentai", "DragonBallHentai", "PokemonNSFW", "DisneyNSFW",
+    "OverwatchNSFW", "OnePieceHentai", "AnimeArmpits", "BigAnimeTiddies",
+    "MaidHentai", "MonsterGirls", "hentai_gifs", "HentaiBlowjobs",
+    "thighhighs", "animelegs", "Tentai", "HentaiAnal", "futa",
+    "UncensoredHentai", "YuriNSFW", "AnimeMILFS", "WaifuPorn",
+    "hentaiass", "ecchiGIFs", "TouhouNSFW", "BDSMhentai",
+    "DragonBallZNSFW", "NarutoRule34", "FairyTailNSFW", "BleachNSFW",
+    "DigimonNSFW", "HentaiThighs", "HentaiPetgirls",
+    "LeagueOfLegendsNSFW", "GenshinImpactNSFW", "SailorMoonNSFW",
+    "EvangelionNSFW", "FateHentai", "OverwatchHentai", "RWBYNSFW",
+    "AvatarNSFW", "KantaiCollectionNSFW", "ReZeroNSFW", "KonosubaNSFW",
+    "MyHeroHentai", "DemonSlayerHentai", "OnePunchManNSFW",
+    "AttackOnTitanNSFW", "InuyashaNSFW", "CodeGeassNSFW",
+    "BlackCloverNSFW", "BorutoHentai", "YuGiOhNSFW", "KillLaKillNSFW",
+    "PersonaNSFW", "NierNSFW", "FinalFantasyNSFW", "DisneyHentai",
+    "CartoonHentai", "GravityFallsNSFW", "KimPossibleNSFW",
+    "TeenTitansNSFW", "ScoobyDooNSFW", "LooneyTunesNSFW",
+    "RegularShowNSFW", "TotalDramaNSFW", "DannyPhantomNSFW",
+    "PhineasAndFerbNSFW", "ecchibabes", "rule34cartoons",
+    "LewdAnimeGirls", "OppaiHentai", "AnimeNsfw", "BunnyGirlsNSFW",
+    "WaifuNsfw", "HentaiHQ", "AnimeEcchi", "nsfwanimegifs",
+    "EcchiHentai", "HentaiCouples", "ShotaHentai", "MonsterGirlNSFW",
+    "DoujinHentai", "HentaiThicc", "UncensoredEcchi", "LewdHentai",
+    "AnimeNSFW", "CartoonRule34", "nsfwcosplayhentai", "EcchiWaifus",
+    "Rule34Cartoon", "EcchiParadise", "LewdCartoons", "AnimeThighs",
+    "HentaiXXX", "Doujinshi", "LewdWaifus", "AnimeLewd", "Rule34Overwatch",
+    "EcchiParadise", "LewdWaifu", "WaifuNSFW", "AnimeBooties",
+    "MonsterHentai", "EcchiWorld", "TentacleHentai", "LewdFantasy",
+    "GamerGirlHentai", "FutaHentai", "YuriHentai", "BondageHentai",
+    "DoujinNsfw", "Rule34Hentai", "AnimePussy", "AnimeBoobs",
+    "CartoonPorn", "AnimeLewds", "Rule34Cartoons", "UncensoredHentaiGIFs",
+    "AnimeNudes", "LewdHentaiGirls", "EcchiBooty", "AnimeAhegao",
+    "CartoonEcchi", "AnimeBDSM", "Rule34_NSFW", "MangaHentai",
+    "EcchiHQ", "LewdAnime", "AnimeGifsNSFW", "CartoonEcchiPorn",
+    "DoujinWorld", "HentaiVerse", "LewdFantasyGirls", "Rule34CartoonHQ",
+    # +20 extras
+    "NSFWManga", "EcchiCosplay", "TentacleNSFW", "EcchiGirls",
+    "LewdAnimeArt", "MonsterGirlHentai", "Rule34Anime", "DoujinWorlds",
+    "CartoonEcchiNSFW", "AnimeSluts", "HentaiLovers", "WaifuPornNSFW",
+    "HentaiDrops", "NSFW_Anime", "AnimeX
+XX", "AnimeLewdGirls",
+    "EcchiFantasy", "Rule34AnimeNSFW", "DoujinFans", "AnimeNudesHQ"
+]
+
+# --- Reddit Setup ---
+reddit = praw.Reddit(
+    client_id=os.environ.get("reddit_client_id"),
+    client_secret=os.environ.get("reddit_client_secret"),
+    user_agent="discord-bot"
+)
+
+async def fetch_reddit(subreddit_name):
+    subreddit = reddit.subreddit(subreddit_name)
+    posts = [post async for post in subreddit.hot(limit=50)]
+    if not posts:
+        return None
+    post = pyrandom.choice(posts)
+    return post.url
+
+# --- Rule34 Fetch ---
+async def fetch_rule34(tag=None):
+    url = "https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1"
+    if tag:
+        url += f"&tags={tag}"
+    try:
+        resp = requests.get(url, timeout=10).json()
+        if not resp:
+            return None
+        post = pyrandom.choice(resp)
+        return post.get("file_url")
+    except:
+        return None
+
+# --- Gelbooru Fetch ---
+async def fetch_gelbooru(tag=None):
+    base = "https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1"
+    if tag:
+        base += f"&tags={tag}"
+    try:
+        resp = requests.get(base, timeout=10).json()
+        if not resp:
+            return None
+        post = pyrandom.choice(resp)
+        return post.get("file_url")
+    except:
+        return None
+
+# --- Nekos.life Fetch ---
+async def fetch_neko():
+    try:
+        resp = requests.get("https://nekos.life/api/v2/img/Random_hentai_gif").json()
+        return resp.get("url")
+    except:
+        return None
+
+# --- RedGifs Fetch ---
+async def fetch_redgif_random():
+    try:
+        resp = requests.get("https://api.redgifs.com/v2/gifs/random").json()
+        return resp.get("gif", {}).get("urls", {}).get("hd")
+    except:
+        return None
+
+# --- Commands ---
+@bot.command()
+async def helpnsfw(ctx):
+    commands_list = [
+        "**Reddit:** !search <sub>, !autosub <sub> <delay>, !autostop, !pool",
+        "**Rule34:** !r34 <tag>, !autor34 <tag> <delay>, !autostopr34, !r34pool",
+        "**Gelbooru:** !gel <tag>, !autogel <tag> <delay>, !autostopgel",
+        "**Nekos:** !nekonsfw, !autoneko <delay>, !autostopneko",
+        "**RedGifs:** !redgif, !redgifsearch <tag>, !redgifuser <name>, !autoreddgif <delay>, !autostopredgif"
+    ]
+    await ctx.send("\n".join(commands_list))
+
+@bot.command()
+async def search(ctx, *, subreddit):
+    url = await fetch_reddit(subreddit)
+    if url:
+        await ctx.send(url)
+    else:
+        await ctx.send("No posts found.")
+
+@bot.command()
+async def r34(ctx, *, tag=None):
+    url = await fetch_rule34(tag)
+    if url:
+        await ctx.send(url)
+    else:
+        await ctx.send("Nothing found.")
+
+@bot.command()
+async def gel(ctx, *, tag=None):
+    url = await fetch_gelbooru(tag)
+    if url:
+        await ctx.send(url)
+    else:
+        await ctx.send("Nothing found.")
+
+@bot.command()
+async def nekonsfw(ctx):
+    url = await fetch_neko()
+    if url:
+        await ctx.send(url)
+    else:
+        await ctx.send("Nothing found.")
+
+@bot.command()
+async def redgif(ctx):
+    url = await fetch_redgif_random()
+    if url:
+        await ctx.send(url)
+    else:
+        await ctx.send("Nothing found.")
+
+# --- Run ---
+keep_alive()
+bot.run(os.environ["user_token"])
