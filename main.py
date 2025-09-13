@@ -129,11 +129,11 @@ hentai_pool = [
     "EcchiFantasy", "Rule34AnimeNSFW", "DoujinFans", "AnimeNudesHQ"
 ]
 
-# --- Reddit Setup ---
+# --- Reddit API setup (praw) ---
 reddit = praw.Reddit(
-    client_id=os.environ.get("reddit_client_id"),
-    client_secret=os.environ.get("reddit_client_secret"),
-    user_agent="discord-bot"
+    client_id="lQ_-b50YbnuDiL_uC6B7OQ",
+    client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
+    user_agent="NsfwDiscordBot/1.0"
 )
 
 # --- Fetchers ---
@@ -337,9 +337,6 @@ async def autostopredgif(ctx):
     stop_task(ctx.channel.id)
     await ctx.send("Stopped auto RedGifs.")
 
-
 # --- Run ---
 keep_alive()
 bot.run(os.environ["user_token"])
-
-                       
