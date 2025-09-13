@@ -3,7 +3,7 @@ import sys
 import asyncio
 import random as pyrandom
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import threading
 from flask import Flask
 import requests
@@ -32,9 +32,7 @@ def keep_alive():
     t.start()
 
 # --- Discord Setup ---
-intents = discord.Intents.default()
-intents.messages = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!")
 
 # --- Pools (from original) ---
 nsfw_pool = [
@@ -339,6 +337,9 @@ async def autostopredgif(ctx):
     stop_task(ctx.channel.id)
     await ctx.send("Stopped auto RedGifs.")
 
+
 # --- Run ---
 keep_alive()
 bot.run(os.environ["user_token"])
+
+                       
