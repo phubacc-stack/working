@@ -317,8 +317,8 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
 @client.command()
 async def auto(ctx, seconds: int = 30, content_type: str = "img"):
     global auto_tasks
-    if seconds < 5:
-        await ctx.send("⚠️ Minimum 5 seconds.")
+    if seconds < 2:
+        await ctx.send("⚠️ Minimum 2 seconds.")
         return
     if content_type not in ["img", "gif", "vid", "random"]:
         await ctx.send("⚠️ Type must be img | gif | vid | random.")
@@ -394,7 +394,8 @@ async def stats(ctx):
     uptime = datetime.now(timezone.utc) - start_time
     await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
-# --- Keepalive Ping ---
+# --- Keepalive Ping
+ ---
 app = Flask("")
 
 @app.route("/")
@@ -417,4 +418,3 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-
