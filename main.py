@@ -395,7 +395,6 @@ async def stats(ctx):
     await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
 # --- Keepalive Ping
- ---
 app = Flask("")
 
 @app.route("/")
@@ -418,3 +417,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+
