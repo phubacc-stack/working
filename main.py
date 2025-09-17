@@ -268,9 +268,6 @@ async def send_with_gallery_support(channel, item):
         await safe_send(channel, item)
         post_counter += 1
 
-# --- Existing Commands (r, rsub, auto, autosub, autostop, stats, etc.) ---
-# (unchanged from v5.2 – kept intact for backward compatibility)
-
 # --- New Commands ---
 @client.command()
 async def search(ctx, *, query: str):
@@ -381,7 +378,7 @@ async def who(ctx):
     else:
         await ctx.send("⚠️ No auto running here.")
 
-@client.command()
+@client.command(name="help")
 async def helpme(ctx):
     """Custom help menu"""
     embed = discord.Embed(title="🤖 Bot Commands", color=0xFF69B4)
@@ -390,7 +387,8 @@ async def helpme(ctx):
     embed.add_field(name="🔍 Search", value="`!search <words>`", inline=False)
     embed.add_field(name="📊 Info", value="`!stats`\n`!who`\n`!pools`\n`!listpool nsfw|hentai [page]`", inline=False)
     embed.set_footer(text=f"Bot version {version}")
-    await ctx.send(embed=embed)
+    # FIX: add content=None for forks that don't accept embed-only
+    await ctx.send(content=None, embed=embed)
 
 # --- Keepalive ---
 app = Flask("")
@@ -415,4 +413,3 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-        
