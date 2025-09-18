@@ -60,7 +60,7 @@ client = commands.Bot(command_prefix="!", self_bot=False)
 auto_tasks = {}
 
 # --- Utils ---
-async def send_with_gallery_support(channel, url):
+async def send_with_gallery_support(channel, url, delay=30):
     global post_counter
     try:
         if isinstance(url, list):  # gallery
@@ -68,18 +68,36 @@ async def send_with_gallery_support(channel, url):
                 await channel.send(u)
                 post_counter += 1
                 print(f"[Sent] {u}")
+                await asyncio.sleep(delay)
         else:
             await channel.send(url)
             post_counter += 1
             print(f"[Sent] {url}")
+            await asyncio.sleep(delay)
     except Exception as e:
         print(f"[Error sending] {e}")
 
-def get_filtered_posts(subreddit, content_type="img", search_term=None):
+def get_filtered_posts(subreddit, content_type="img", search_term=None, section="hot"):
     posts = []
     try:
         sub = reddit.subreddit(subreddit)
-        for p in sub.hot(limit=50):  # Increased limit to fetch more posts
+        
+        # Switch between sections: hot, new, rising, controversial, top
+        if section == "hot":
+            submission_generator = sub.hot(limit=50)
+        elif section == "new":
+            submission_generator = sub.new(limit=50)
+        elif section == "rising":
+            submission_generator = sub.rising(limit=50)
+        elif section == "controversial":
+            submission_generator = sub.controversial(limit=50)
+        elif section == "top":
+            submission_generator = sub.top(limit=50)
+        else:
+            # Default to "hot" if invalid section
+            submission_generator = sub.hot(limit=50)
+        
+        for p in submission_generator:
             if p.over_18 is False:
                 continue
             if search_term and search_term.lower() not in p.title.lower():
@@ -87,15 +105,15 @@ def get_filtered_posts(subreddit, content_type="img", search_term=None):
             url = p.url
             if content_type == "img" and any(url.endswith(ext) for ext in [".jpg", ".png", ".jpeg", ".webp"]):
                 posts.append(url)
-            elif content_type == "gif" and (url.endswith(".gif") or "redgifs.com" in url):  # Added redgifs filter
+            elif content_type == "gif" and url.endswith(".gif"):
                 posts.append(url)
-            elif content_type == "vid" and ("v.redd.it" in url or url.endswith(".mp4") or "redgifs.com" in url):  # Added redgifs for video
+            elif content_type == "vid" and ("v.redd.it" in url or url.endswith(".mp4")):
                 posts.append(url)
             elif content_type == "random":
                 posts.append(url)
-            elif content_type == "gallery" and hasattr(p, "media_metadata"):
+            elif content_type == "gallery" and getattr(p, "is_gallery", False):
                 items = []
-                for media_id, m in p.media_metadata.items():
+                for media_id, m in getattr(p, "media_metadata", {}).items():
                     u = m["s"]["u"]
                     items.append(html.unescape(u))
                 if items:
@@ -108,6 +126,9 @@ def get_filtered_posts(subreddit, content_type="img", search_term=None):
 async def auto_loop(channel, subreddit=None, content_type="img", delay=30, search_term=None, poolmix=False):
     global auto_tasks
     try:
+        sections = ["hot", "new", "rising", "controversial", "top"]  # Possible sections to fetch from
+        section_idx = 0  # Start from 'hot'
+        
         while True:
             info = auto_tasks.get(channel.id)
             if not info or info.get("task").cancelled():
@@ -120,15 +141,25 @@ async def auto_loop(channel, subreddit=None, content_type="img", delay=30, searc
                     sub = pyrandom.choice(nsfw_pool + hentai_pool)
                 else:
                     sub = subreddit
+
                 ctype = info.get("type", content_type)
                 if ctype == "random":
                     ctype = pyrandom.choice(["img", "gif", "vid", "gallery"])
-                posts = get_filtered_posts(sub, ctype, search_term=search_term)
+
+                posts = get_filtered_posts(sub, ctype, search_term=search_term, section=sections[section_idx])
+
                 if not posts:
                     await asyncio.sleep(delay)
                     continue
-                choice = pyrandom.choice(posts)
-                await send_with_gallery_support(channel, choice)
+
+                if ctype == "gallery":  # Send all images in the gallery
+                    await send_with_gallery_support(channel, posts, delay=delay)
+                else:
+                    choice = pyrandom.choice(posts)
+                    await send_with_gallery_support(channel, choice, delay=delay)
+
+                # Cycle to the next section
+                section_idx = (section_idx + 1) % len(sections)
             except Exception as e:
                 print(f"[auto_loop error] {e}")
             await asyncio.sleep(delay)
@@ -194,32 +225,21 @@ async def stats(ctx):
     await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
 @client.command()
-async def search(ctx, *, query: str):
-    terms = query.split()
+async def gallerycollection(ctx, content_type: str = "gallery"):
+    """Fetch random gallery posts"""
     collected = []
-    for sub in nsfw_pool + hentai_pool:
-        posts = get_filtered_posts(sub, "img", search_term=" ".join(terms))
-        collected.extend(posts)
-        if len(collected) >= 10:
-            break
+    while len(collected) < 10:  # Adjust the amount based on how many galleries you want
+        sub = pyrandom.choice(nsfw_pool + hentai_pool)
+        posts = get_filtered_posts(sub, content_type)
+        if posts:
+            collected.extend(posts)
+
     if collected:
-        for item in collected[:10]:
+        for item in pyrandom.sample(collected, len(collected)):  # Randomize gallery order
             await send_with_gallery_support(ctx.channel, item)
     else:
-        await ctx.send("❌ No search results found.")
-
-@client.command()
-async def pools(ctx):
-    await ctx.send(f"NSFW pool: {len(nsfw_pool)} subs\nHentai pool: {len(hentai_pool)} subs")
-
-@client.command()
-async def listpool(ctx, pool_type: str = "all"):
-    pool_type = pool_type.lower()
-    if pool_type == "nsfw": lst = nsfw_pool
-    elif pool_type == "hentai": lst = hentai_pool
-    else: lst = nsfw_pool + hentai_pool
-    await ctx.send(f"{pool_type.upper()} pool ({len(lst)} subs): {', '.join(lst[:50])} ...")
-
+        await ctx.send("❌ No galleries found.")
+    
 @client.command()
 async def who(ctx):
     await ctx.send(f"I am a Discord NSFW bot v{version}")
@@ -232,11 +252,9 @@ async def help(ctx):  # function name can stay "help" or change
         "!auto [seconds] [type] - Auto pool mix\n"
         "!autosub [sub] [seconds] [type] - Auto subreddit\n"
         "!autostop - Stop auto\n"
-        "!search [query] - Search posts\n"
-        "!pools - Show pool sizes\n"
-        "!listpool [nsfw/hentai/all] - List pool\n"
-        "!who - Bot info\n"
-        "!stats - Bot stats"
+        "!gallerycollection - Fetch random gallery posts\n"
+        "!stats - Bot stats\n"
+        "!who - Bot info"
     )
     await ctx.send(help_message)
 
@@ -264,11 +282,11 @@ async def on_raw_reaction_add(payload):
         info["type"] = "img"
         await channel.send("🖼️ Type set to IMG.")
     elif emoji == "🎬":
-        info["type"] = "gif"
-        await channel.send("🎬 Type set to GIF.")
-    elif emoji == "🎥":
         info["type"] = "vid"
-        await channel.send("🎥 Type set to VID.")
+        await channel.send("🎬 Type set to VID.")
+    elif emoji == "🎥":
+        info["type"] = "gif"
+        await channel.send("🎥 Type set to GIF.")
     elif emoji == "🔀":
         info["type"] = "random"
         await channel.send("🔀 Type set to RANDOM.")
@@ -297,4 +315,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-        
+                
