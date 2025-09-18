@@ -161,7 +161,11 @@ async def auto_loop(channel_id):
     sent_posts = set()
     while True:
         try:
+            # Log paused state
+            logging.info(f"[AutoLoop] Channel {channel_id} - paused state: {info.get('paused')}")
+
             if info.get("paused"):
+                logging.info(f"[AutoLoop] Channel {channel_id} is paused. Waiting...")
                 await asyncio.sleep(3)
                 continue
             subreddit = info.get("subreddit") or pyrandom.choice(nsfw_pool+hentai_pool)
@@ -186,7 +190,12 @@ async def auto_loop(channel_id):
         except Exception as e: logging.error(f"[AutoLoop Error] {e}"); await asyncio.sleep(5)
 
 def start_auto(channel_id, subreddit="", content_type="img", delay=30, only_collections=False, search_term=None):
-    if channel_id in auto_tasks: auto_tasks[channel_id]["task"].cancel()
+    if channel_id in auto_tasks:
+        if auto_tasks[channel_id]["task"].done():
+            logging.info(f"[StartAuto] Task for channel {channel_id} already done, skipping cancel.")
+        else:
+            auto_tasks[channel_id]["task"].cancel()
+            logging.info(f"[StartAuto] Canceled previous task for channel {channel_id}.")
     auto_tasks[channel_id] = {
         "task": asyncio.create_task(auto_loop(channel_id)),
         "paused": False,
@@ -236,77 +245,6 @@ async def autosub(ctx, subreddit:str, seconds:int=30, content_type:str="img"):
     msg = await ctx.send(f"▶️ AutoSub started: r/{subreddit} every {seconds}s for {content_type}. Use reactions to control.")
     for r in ["⏸️","▶️","⏹️","🖼️","🎥","🎬","🔀","ℹ️"]: await msg.add_reaction(r)
 
-@client.command()
-async def autocollect(ctx, subreddit:str, seconds:int=30, content_type:str="img"):
-    start_auto(ctx.channel.id, subreddit=subreddit, content_type=content_type, delay=seconds, only_collections=True)
-    await ctx.send(f"🖼️ Auto Collection started for r/{subreddit} every {seconds}s.")
-
-@client.command()
-async def autosearch(ctx, search_term:str, seconds:int=30, content_type:str="img"):
-    start_auto(ctx.channel.id, content_type=content_type, delay=seconds, search_term=search_term)
-    await ctx.send(f"🔍 Auto Search started for '{search_term}' every {seconds}s.")
-
-@client.command()
-async def autostop(ctx):
-    if ctx.channel.id in auto_tasks:
-        auto_tasks[ctx.channel.id]["task"].cancel()
-        auto_tasks.pop(ctx.channel.id,None)
-        await ctx.send("⏹️ Auto stopped.")
-    else:
-        await ctx.send("⚠️ No auto running here.")
-
-@client.command()
-async def stats(ctx):
-    uptime = datetime.now(timezone.utc) - start_time
-    await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
-
-@client.command()
-async def search(ctx, *, query:str):
-    terms = query.split()
-    collected=[]
-    for sub in nsfw_pool+hentai_pool:
-        posts = get_filtered_posts(sub,"img",search_term=" ".join(terms))
-        collected.extend(posts)
-        if len(collected)>=10: break
-    if collected:
-        for item in collected[:10]: await send_with_gallery_support(ctx.channel,item)
-    else:
-        await ctx.send("❌ No search results found.")
-
-@client.command()
-async def pools(ctx):
-    await ctx.send(f"NSFW pool: {len(nsfw_pool)} subs\nHentai pool: {len(hentai_pool)} subs")
-
-@client.command()
-async def listpool(ctx, pool_type:str="all"):
-    pool_type = pool_type.lower()
-    if pool_type=="nsfw": lst=nsfw_pool
-    elif pool_type=="hentai": lst=hentai_pool
-    else: lst=nsfw_pool+hentai_pool
-    await ctx.send(f"{pool_type.upper()} pool ({len(lst)} subs): {', '.join(lst[:50])} ...")
-
-@client.command()
-async def who(ctx):
-    await ctx.send(f"I am a Discord NSFW bot v{version}")
-
-@client.command()
-async def help(ctx):
-    help_message = (
-        "!r [amount] [type] - Random posts\n"
-        "!rsub [subreddit] [amount] [type] - Posts from subreddit\n"
-        "!autosub [sub] [seconds] [type] - Auto subreddit\n"
-        "!autocollect [sub] [seconds] [type] - Auto collection\n"
-        "!autosearch [query] [seconds] [type] - Auto search\n"
-        "!autostop - Stop auto\n"
-        "!search [query] - Search posts\n"
-        "!pools - Show pool sizes\n"
-        "!listpool [nsfw/hentai/all] - List pool\n"
-        "!who - Bot info\n"
-        "!stats - Bot stats"
-    )
-    await ctx.send(help_message)  # Sending plain text instead of embed
-    
-
 # --- Reaction Controls ---
 @client.event
 async def on_reaction_add(reaction,user):
@@ -341,5 +279,3 @@ threading.Thread(target=ping,daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-        
-
