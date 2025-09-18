@@ -290,19 +290,22 @@ async def who(ctx):
 
 @client.command()
 async def help(ctx):
-    msg="""**Commands:**
-!r [amount] [type] - Random posts
-!rsub [subreddit] [amount] [type] - Posts from subreddit
-!autosub [sub] [seconds] [type] - Auto subreddit
-!autocollect [sub] [seconds] [type] - Auto collection
-!autosearch [query] [seconds] [type] - Auto search
-!autostop - Stop auto
-!search [query] - Search posts
-!pools - Show pool sizes
-!listpool [nsfw/hentai/all] - List pool
-!who - Bot info
-!stats - Bot stats"""
-    await ctx.send(msg)
+    embed = discord.Embed(title="Commands", color=0x00ff00)
+    embed.description = (
+        "!r [amount] [type] - Random posts\n"
+        "!rsub [subreddit] [amount] [type] - Posts from subreddit\n"
+        "!autosub [sub] [seconds] [type] - Auto subreddit\n"
+        "!autocollect [sub] [seconds] [type] - Auto collection\n"
+        "!autosearch [query] [seconds] [type] - Auto search\n"
+        "!autostop - Stop auto\n"
+        "!search [query] - Search posts\n"
+        "!pools - Show pool sizes\n"
+        "!listpool [nsfw/hentai/all] - List pool\n"
+        "!who - Bot info\n"
+        "!stats - Bot stats"
+    )
+    await ctx.send(embed=embed)  # ✅ No content=None here
+    
 
 # --- Reaction Controls ---
 @client.event
@@ -338,3 +341,4 @@ threading.Thread(target=ping,daemon=True).start()
 # --- Run Bot ---
 client.run(user_token)
                                                         
+
