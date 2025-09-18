@@ -79,7 +79,7 @@ def get_filtered_posts(subreddit, content_type="img", search_term=None):
     posts = []
     try:
         sub = reddit.subreddit(subreddit)
-        for p in sub.hot(limit=40):
+        for p in sub.hot(limit=100):  # Increased fetch limit to 100
             if p.over_18 is False:
                 continue
             if search_term and search_term.lower() not in p.title.lower():
@@ -93,9 +93,9 @@ def get_filtered_posts(subreddit, content_type="img", search_term=None):
                 posts.append(url)
             elif content_type == "random":
                 posts.append(url)
-            elif content_type == "gallery" and getattr(p, "is_gallery", False):
+            elif content_type == "gallery" and hasattr(p, "media_metadata"):
                 items = []
-                for media_id, m in getattr(p, "media_metadata", {}).items():
+                for media_id, m in p.media_metadata.items():
                     u = m["s"]["u"]
                     items.append(html.unescape(u))
                 if items:
@@ -117,7 +117,10 @@ async def auto_loop(channel, subreddit=None, content_type="img", delay=30, searc
                 continue
             try:
                 if poolmix:
-                    sub = pyrandom.choice(nsfw_pool + hentai_pool)
+                    combined_pool = nsfw_pool + hentai_pool
+                    pyrandom.shuffle(combined_pool)  # Shuffle the pool for better randomness
+                    sub = combined_pool[0]  # Pick the first subreddit after shuffle
+                    print(f"[Auto] Selected subreddit: {sub}")  # Debug print to verify
                 else:
                     sub = subreddit
                 ctype = info.get("type", content_type)
@@ -240,6 +243,21 @@ async def help(ctx):  # function name can stay "help" or change
     )
     await ctx.send(help_message)
 
+# --- Gallery Collection Command ---
+@client.command()
+async def gallerycollection(ctx):
+    collected = []
+    for sub in nsfw_pool + hentai_pool:
+        posts = get_filtered_posts(sub, "gallery")
+        collected.extend(posts)
+        if len(collected) >= 10:
+            break
+    if collected:
+        for item in collected[:10]:
+            await send_with_gallery_support(ctx.channel, item)
+    else:
+        await ctx.send("❌ No gallery posts found.")
+
 # --- Reaction Controls ---
 @client.event
 async def on_raw_reaction_add(payload):
@@ -297,3 +315,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+    
