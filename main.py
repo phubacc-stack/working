@@ -224,8 +224,8 @@ async def listpool(ctx, pool_type: str = "all"):
 async def who(ctx):
     await ctx.send(f"I am a Discord NSFW bot v{version}")
 
-@client.command()
-async def help(ctx):
+@client.command(name="myhelp")  # renamed here
+async def help(ctx):  # function name can stay "help" or change
     help_message = (
         "!r [amount] [type] - Random posts\n"
         "!rsub [subreddit] [amount] [type] - Posts from subreddit\n"
@@ -297,5 +297,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-
-
+                                                                  
