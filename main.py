@@ -79,7 +79,7 @@ def get_filtered_posts(subreddit, content_type="img", search_term=None):
     posts = []
     try:
         sub = reddit.subreddit(subreddit)
-        for p in sub.hot(limit=100):  # Increased fetch limit to 100
+        for p in sub.hot(limit=50):  # Increased limit to fetch more posts
             if p.over_18 is False:
                 continue
             if search_term and search_term.lower() not in p.title.lower():
@@ -87,9 +87,9 @@ def get_filtered_posts(subreddit, content_type="img", search_term=None):
             url = p.url
             if content_type == "img" and any(url.endswith(ext) for ext in [".jpg", ".png", ".jpeg", ".webp"]):
                 posts.append(url)
-            elif content_type == "gif" and url.endswith(".gif"):
+            elif content_type == "gif" and (url.endswith(".gif") or "redgifs.com" in url):  # Added redgifs filter
                 posts.append(url)
-            elif content_type == "vid" and ("v.redd.it" in url or url.endswith(".mp4")):
+            elif content_type == "vid" and ("v.redd.it" in url or url.endswith(".mp4") or "redgifs.com" in url):  # Added redgifs for video
                 posts.append(url)
             elif content_type == "random":
                 posts.append(url)
@@ -117,10 +117,7 @@ async def auto_loop(channel, subreddit=None, content_type="img", delay=30, searc
                 continue
             try:
                 if poolmix:
-                    combined_pool = nsfw_pool + hentai_pool
-                    pyrandom.shuffle(combined_pool)  # Shuffle the pool for better randomness
-                    sub = combined_pool[0]  # Pick the first subreddit after shuffle
-                    print(f"[Auto] Selected subreddit: {sub}")  # Debug print to verify
+                    sub = pyrandom.choice(nsfw_pool + hentai_pool)
                 else:
                     sub = subreddit
                 ctype = info.get("type", content_type)
@@ -243,21 +240,6 @@ async def help(ctx):  # function name can stay "help" or change
     )
     await ctx.send(help_message)
 
-# --- Gallery Collection Command ---
-@client.command()
-async def gallerycollection(ctx):
-    collected = []
-    for sub in nsfw_pool + hentai_pool:
-        posts = get_filtered_posts(sub, "gallery")
-        collected.extend(posts)
-        if len(collected) >= 10:
-            break
-    if collected:
-        for item in collected[:10]:
-            await send_with_gallery_support(ctx.channel, item)
-    else:
-        await ctx.send("❌ No gallery posts found.")
-
 # --- Reaction Controls ---
 @client.event
 async def on_raw_reaction_add(payload):
@@ -282,11 +264,11 @@ async def on_raw_reaction_add(payload):
         info["type"] = "img"
         await channel.send("🖼️ Type set to IMG.")
     elif emoji == "🎬":
-        info["type"] = "vid"
-        await channel.send("🎬 Type set to VID.")
-    elif emoji == "🎥":
         info["type"] = "gif"
-        await channel.send("🎥 Type set to GIF.")
+        await channel.send("🎬 Type set to GIF.")
+    elif emoji == "🎥":
+        info["type"] = "vid"
+        await channel.send("🎥 Type set to VID.")
     elif emoji == "🔀":
         info["type"] = "random"
         await channel.send("🔀 Type set to RANDOM.")
@@ -315,4 +297,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-    
+        
