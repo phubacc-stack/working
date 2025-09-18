@@ -21,9 +21,9 @@ start_time = datetime.now(timezone.utc)
 post_counter = 0
 
 # --- User Token from environment ---
-user_token = os.environ.get("DISCORD_BOT_TOKEN")
+user_token = os.environ.get("user_token")
 if not user_token:
-    print("[ERROR] DISCORD_BOT_TOKEN not set in environment!")
+    print("[ERROR] user_token not set in environment!")
     sys.exit(1)
 
 service_url = os.environ.get("SERVICE_URL", "https://example.com")  # optional keepalive URL
@@ -297,3 +297,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+
