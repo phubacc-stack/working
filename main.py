@@ -47,7 +47,8 @@ reddit = praw.Reddit(
 client = commands.Bot(command_prefix="!", help_command=None)
 
 # --- Pools from GitHub ---
-POOLS_URL = "https://raw.githubusercontent.com/phubacc-stack/working/blob/8ce06d533b0ba820fedd0001368215a3d42fff29/pools.json"
+POOLS_URL = "https://raw.githubusercontent.com/phubacc-stack/working/8ce06d533b0ba820fedd0001368215a3d42fff29/pools.json"
+
 nsfw_pool, hentai_pool = [], []
 
 def load_pools():
@@ -341,3 +342,4 @@ threading.Thread(target=ping,daemon=True).start()
 # --- Run Bot ---
 client.run(user_token)
         
+
