@@ -30,9 +30,9 @@ service_url = os.environ.get("SERVICE_URL", "https://example.com")  # optional k
 
 # --- Reddit API setup (praw) ---
 reddit = praw.Reddit(
-    client_id=os.environ.get("REDDIT_CLIENT_ID", "YOUR_CLIENT_ID"),
-    client_secret=os.environ.get("REDDIT_CLIENT_SECRET", "YOUR_CLIENT_SECRET"),
-    user_agent="discord:nsfw.bot:v6.0 (by u/you)"
+    client_id="lQ_-b50YbnuDiL_uC6B7OQ",
+    client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
+    user_agent="NsfwDiscordBot/1.0"
 )
 
 # --- Pools Loader ---
@@ -297,4 +297,5 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+
 
