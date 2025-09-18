@@ -47,7 +47,7 @@ reddit = praw.Reddit(
 client = commands.Bot(command_prefix="!", help_command=None)
 
 # --- Pools from GitHub ---
-POOLS_URL = "https://raw.githubusercontent.com/USERNAME/REPO/main/pools.json"
+POOLS_URL = "https://raw.githubusercontent.com/phubacc-stack/working/blob/8ce06d533b0ba820fedd0001368215a3d42fff29/pools.json"
 nsfw_pool, hentai_pool = [], []
 
 def load_pools():
@@ -290,8 +290,7 @@ async def who(ctx):
 
 @client.command()
 async def help(ctx):
-    embed = discord.Embed(title="Commands", color=0x00ff00)
-    embed.description = (
+    help_message = (
         "!r [amount] [type] - Random posts\n"
         "!rsub [subreddit] [amount] [type] - Posts from subreddit\n"
         "!autosub [sub] [seconds] [type] - Auto subreddit\n"
@@ -304,7 +303,7 @@ async def help(ctx):
         "!who - Bot info\n"
         "!stats - Bot stats"
     )
-    await ctx.send(embed=embed)  # ✅ No content=None here
+    await ctx.send(help_message)  # Sending plain text instead of embed
     
 
 # --- Reaction Controls ---
@@ -341,4 +340,4 @@ threading.Thread(target=ping,daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-    
+        
