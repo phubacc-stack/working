@@ -93,9 +93,9 @@ def get_filtered_posts(subreddit, content_type="img", search_term=None):
                 posts.append(url)
             elif content_type == "random":
                 posts.append(url)
-            elif content_type == "gallery" and hasattr(p, "media_metadata"):
+            elif content_type == "gallery" and getattr(p, "is_gallery", False):
                 items = []
-                for media_id, m in p.media_metadata.items():
+                for media_id, m in getattr(p, "media_metadata", {}).items():
                     u = m["s"]["u"]
                     items.append(html.unescape(u))
                 if items:
@@ -264,11 +264,11 @@ async def on_raw_reaction_add(payload):
         info["type"] = "img"
         await channel.send("🖼️ Type set to IMG.")
     elif emoji == "🎬":
-        info["type"] = "gif"
-        await channel.send("🎬 Type set to GIF.")
-    elif emoji == "🎥":
         info["type"] = "vid"
-        await channel.send("🎥 Type set to VID.")
+        await channel.send("🎬 Type set to VID.")
+    elif emoji == "🎥":
+        info["type"] = "gif"
+        await channel.send("🎥 Type set to GIF.")
     elif emoji == "🔀":
         info["type"] = "random"
         await channel.send("🔀 Type set to RANDOM.")
@@ -292,9 +292,8 @@ def ping():
             pass
         time.sleep(600)
 
-threading.Thread(target=run).start()
+threading.Thread(target=run, daemon=True).start()
 threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-                                                                  
