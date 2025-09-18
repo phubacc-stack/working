@@ -43,8 +43,8 @@ reddit = praw.Reddit(
     user_agent="NsfwDiscordBot/1.0"
 )
 
-intents = discord.Intents.all()
-client = commands.Bot(command_prefix="!", help_command=None, intents=intents)
+# Initialize the bot without intents
+client = commands.Bot(command_prefix="!", help_command=None)
 
 # --- Pools from GitHub ---
 POOLS_URL = "https://raw.githubusercontent.com/USERNAME/REPO/main/pools.json"
@@ -329,7 +329,8 @@ async def on_reaction_add(reaction,user):
 app = Flask("")
 @app.route("/")
 def home(): return "Bot is alive."
-def run(): app.run(host="0.0.0.0", port=8080)
+def run():
+    app.run(host="0.0.0.0", port=8080)
 def ping():
     while True:
         try: requests.get(service_url)
@@ -340,5 +341,4 @@ threading.Thread(target=ping,daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-                                                        
-
+    
