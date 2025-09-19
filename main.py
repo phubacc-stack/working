@@ -60,19 +60,23 @@ client = commands.Bot(command_prefix="!", self_bot=False)
 auto_tasks = {}
 
 # --- Utils ---
-async def send_with_gallery_support(channel, url, delay=30):
+async def send_with_gallery_support(channel, urls, delay=30):
     global post_counter
     try:
-        if isinstance(url, list):  # gallery
-            for u in url:
-                await channel.send(u)
+        if isinstance(urls, list):  # gallery
+            for u in urls:
+                embed = discord.Embed()
+                embed.set_image(url=u)
+                await channel.send(embed=embed)
                 post_counter += 1
                 print(f"[Sent] {u}")
                 await asyncio.sleep(delay)
         else:
-            await channel.send(url)
+            embed = discord.Embed()
+            embed.set_image(url=urls)
+            await channel.send(embed=embed)
             post_counter += 1
-            print(f"[Sent] {url}")
+            print(f"[Sent] {urls}")
             await asyncio.sleep(delay)
     except Exception as e:
         print(f"[Error sending] {e}")
@@ -315,4 +319,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-                
+            
