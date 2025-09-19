@@ -65,15 +65,17 @@ async def send_with_gallery_support(channel, url, delay=30):
     try:
         if isinstance(url, list):  # gallery
             for u in url:
-                await channel.send(u)
-                post_counter += 1
-                print(f"[Sent] {u}")
-                await asyncio.sleep(delay)
+                if u.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):  # Check if it's an actual image or video
+                    await channel.send(u)  # Send the image directly
+                    post_counter += 1
+                    print(f"[Sent] {u}")
+                    await asyncio.sleep(delay)
         else:
-            await channel.send(url)
-            post_counter += 1
-            print(f"[Sent] {url}")
-            await asyncio.sleep(delay)
+            if url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):  # Check if it's an actual image or video
+                await channel.send(url)
+                post_counter += 1
+                print(f"[Sent] {url}")
+                await asyncio.sleep(delay)
     except Exception as e:
         print(f"[Error sending] {e}")
 
@@ -146,21 +148,16 @@ async def auto_loop(channel, subreddit=None, content_type="img", delay=30, searc
                 if ctype == "random":
                     ctype = pyrandom.choice(["img", "gif", "vid", "gallery"])
 
-                print(f"[AutoLoop] Fetching posts from r/{sub} - Type: {ctype} - Section: {sections[section_idx]}")  # Debugging log
-
                 posts = get_filtered_posts(sub, ctype, search_term=search_term, section=sections[section_idx])
 
                 if not posts:
-                    print(f"[AutoLoop] No posts found in section '{sections[section_idx]}'")  # Debugging log
                     await asyncio.sleep(delay)
                     continue
 
                 if ctype == "gallery":  # Send all images in the gallery
-                    print(f"[AutoLoop] Sending gallery posts: {len(posts)}")
                     await send_with_gallery_support(channel, posts, delay=delay)
                 else:
                     choice = pyrandom.choice(posts)
-                    print(f"[AutoLoop] Sending post: {choice}")  # Debugging log
                     await send_with_gallery_support(channel, choice, delay=delay)
 
                 # Cycle to the next section
