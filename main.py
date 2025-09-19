@@ -63,19 +63,22 @@ auto_tasks = {}
 async def send_with_gallery_support(channel, url, delay=30):
     global post_counter
     try:
-        if isinstance(url, list):  # gallery
+        # If it's a redgif, embed it as a video
+        if 'redgif' in url:
+            embed = discord.Embed()
+            embed.set_video(url)
+            await channel.send(embed=embed)
+        elif isinstance(url, list):  # gallery
             for u in url:
-                if u.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):  # Check if it's an actual image or video
-                    await channel.send(u)  # Send the image directly
-                    post_counter += 1
-                    print(f"[Sent] {u}")
-                    await asyncio.sleep(delay)
-        else:
-            if url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):  # Check if it's an actual image or video
-                await channel.send(url)
+                await channel.send(u)
                 post_counter += 1
-                print(f"[Sent] {url}")
+                print(f"[Sent] {u}")
                 await asyncio.sleep(delay)
+        else:
+            await channel.send(url)
+            post_counter += 1
+            print(f"[Sent] {url}")
+            await asyncio.sleep(delay)
     except Exception as e:
         print(f"[Error sending] {e}")
 
@@ -120,6 +123,9 @@ def get_filtered_posts(subreddit, content_type="img", search_term=None, section=
                     items.append(html.unescape(u))
                 if items:
                     posts.append(items)
+            # Handle redgif videos here
+            elif content_type == "gif" and "redgif" in url:
+                posts.append(url)
     except Exception as e:
         print(f"[get_filtered_posts error] {e}")
     return posts
@@ -317,3 +323,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+        
