@@ -197,12 +197,14 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
     global seen_posts
     posts = []
     subreddit_name = correct_subreddit(subreddit_name)
+    print(f"[Fetching] r/{subreddit_name}...")  # Print which subreddit is being fetched
     for attempt in range(retries):
         try:
             subreddit = reddit.subreddit(subreddit_name)
             fetch_method = pyrandom.choice(["hot", "new", "top"])
             listings = getattr(subreddit, fetch_method)(limit=limit)
 
+            print(f"[Fetching] Using {fetch_method} method...")  # Print fetch method being used
             for post in listings:
                 if post.stickied:
                     continue
@@ -250,7 +252,7 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
             print(f"[Reddit Error] r/{subreddit_name} attempt {attempt+1}: {e}")
             time.sleep(1)
 
-    print(f"[Fetched] r/{subreddit_name} -> {len(posts)} posts")
+    print(f"[Fetched] r/{subreddit_name} -> {len(posts)} posts")  # Print the number of posts fetched
     return posts
 
 # --- Auto System ---
