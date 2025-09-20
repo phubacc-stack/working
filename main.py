@@ -38,10 +38,9 @@ reddit = praw.Reddit(
     user_agent="NsfwDiscordBot/1.0"
 )
 
-client = commands.Bot(command_prefix="!")
+client = commands.Bot(command_prefix="!")  # Old fork, no intents
 
 # --- Subreddit Pools ---
-
 nsfw_pool = [
     "nsfw", "gonewild", "RealGirls", "rule34", "porn", "nsfw_gifs",
     "ass", "boobs", "NSFW_Snapchat", "BustyPetite", "collegesluts",
@@ -190,6 +189,7 @@ all_subs_pool = nsfw_pool + hentai_pool
 def correct_subreddit(subreddit_name):
     match, score, _ = process.extractOne(subreddit_name, all_subs_pool, scorer=fuzz.ratio)
     if score >= 70:
+        print(f"[Fuzzy] Corrected '{subreddit_name}' -> '{match}'")
         return match
     return subreddit_name  # fallback if no good match
 
@@ -197,7 +197,7 @@ def correct_subreddit(subreddit_name):
 def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
     global seen_posts
     posts = []
-    subreddit_name = correct_subreddit(subreddit_name)  # 🔹 Auto-correct
+    subreddit_name = correct_subreddit(subreddit_name)
     for attempt in range(retries):
         try:
             subreddit = reddit.subreddit(subreddit_name)
@@ -251,6 +251,7 @@ def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
             print(f"[Reddit Error] r/{subreddit_name} attempt {attempt+1}: {e}")
             time.sleep(1)
 
+    print(f"[Fetched] r/{subreddit_name} -> {len(posts)} posts")
     return posts
 
 # --- Auto System ---
@@ -259,6 +260,7 @@ auto_tasks = {}
 async def safe_send(channel, url):
     try:
         await channel.send(url)
+        print(f"[Sent] {url}")
     except Exception as e:
         print(f"[Discord Error] Failed to send: {e}")
 
@@ -268,7 +270,7 @@ async def send_with_gallery_support(channel, item):
         for url in item:
             await safe_send(channel, url)
             post_counter += 1
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
     else:
         await safe_send(channel, item)
         post_counter += 1
@@ -327,10 +329,10 @@ async def rsub(ctx, subreddit: str, amount: int = 1, content_type: str = "img"):
         await ctx.send("❌ No posts found.")
 
 @client.command()
-async def auto(ctx, seconds: int = 30, content_type: str = "img"):
+async def auto(ctx, seconds: int = 2, content_type: str = "img"):  # 🔹 Reduced to 2s
     global auto_tasks
-    if seconds < 5:
-        await ctx.send("⚠️ Minimum 5 seconds.")
+    if seconds < 2:
+        await ctx.send("⚠️ Minimum 2 seconds.")
         return
     if content_type not in ["img", "gif", "vid", "random"]:
         await ctx.send("⚠️ Type must be img | gif | vid | random.")
@@ -354,14 +356,14 @@ async def auto(ctx, seconds: int = 30, content_type: str = "img"):
                 break
             except Exception as e:
                 print(f"[AutoLoop Error] {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(1)
 
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
     await ctx.send(f"▶️ Auto started every {seconds}s for {content_type}.")
 
 @client.command()
-async def autosub(ctx, subreddit: str, seconds: int = 30, content_type: str = "img"):
+async def autosub(ctx, subreddit: str, seconds: int = 2, content_type: str = "img"):  # 🔹 Reduced to 2s
     global auto_tasks
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
@@ -386,7 +388,7 @@ async def autosub(ctx, subreddit: str, seconds: int = 30, content_type: str = "i
                 break
             except Exception as e:
                 print(f"[AutoSub Error] {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(1)
 
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
@@ -428,4 +430,3 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-                                     
