@@ -17,7 +17,7 @@ from rapidfuzz import process, fuzz
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.3-auto-pool'
+version = 'v5.4-auto-pool-fullwalk'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -59,65 +59,81 @@ def correct_subreddit(subreddit_name):
         return match
     return subreddit_name
 
-# --- Helper: Get unique posts (handles galleries) ---
-def get_filtered_posts(subreddit_name, content_type, limit=100, retries=3):
+# --- Iterator cache to walk through subs fully ---
+sub_iterators = {}
+
+def get_subreddit_iterator(subreddit_name, fetch_method):
+    key = f"{subreddit_name}:{fetch_method}"
+    if key not in sub_iterators or sub_iterators[key] is None:
+        subreddit = reddit.subreddit(subreddit_name)
+        listings = getattr(subreddit, fetch_method)(limit=None)
+        sub_iterators[key] = iter(listings)
+    return sub_iterators[key]
+
+# --- Helper: Get unique posts (walk through subreddit) ---
+def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_size=25):
     global seen_posts
     posts = []
     subreddit_name = correct_subreddit(subreddit_name)
-    print(f"[Fetching] r/{subreddit_name}...")  
-    for attempt in range(retries):
-        try:
-            subreddit = reddit.subreddit(subreddit_name)
-            fetch_method = pyrandom.choice(["hot", "new", "top"])
-            listings = getattr(subreddit, fetch_method)(limit=limit)
-            for post in listings:
-                if post.stickied:
-                    continue
-                url = str(post.url)
+    fetch_method = fetch_method or pyrandom.choice(["hot", "new", "top"])
+    print(f"[Fetching] r/{subreddit_name} via {fetch_method}...")
 
-                # Handle Reddit galleries
-                if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
-                    gallery_urls = []
-                    for item in list(post.media_metadata.values())[:25]:
-                        if "s" in item and "u" in item["s"]:
-                            gallery_url = html.unescape(item["s"]["u"])
-                            if gallery_url not in seen_posts:
-                                gallery_urls.append(gallery_url)
-                    if gallery_urls:
-                        posts.append(gallery_urls)
-                    continue
-
-                # Ignore Imgur albums/galleries
-                if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
-                    continue
-                if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
-                    url += ".jpg"
-
-                # Filter by content type
-                if (
-                    (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
-                    or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
-                    or (content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url or "redgifs" in url))
-                ):
-                    if url not in seen_posts:
-                        posts.append(url)
-
-            if posts:
-                pyrandom.shuffle(posts)
-                flat = []
-                for p in posts:
-                    if isinstance(p, list):
-                        flat.append(p)
-                    else:
-                        flat.append(p)
-                        seen_posts.add(p)
-                posts = flat
-                if len(seen_posts) > 5000:
-                    seen_posts.clear()
+    try:
+        iterator = get_subreddit_iterator(subreddit_name, fetch_method)
+        while len(posts) < batch_size:
+            try:
+                post = next(iterator)
+            except StopIteration:
+                # Reset iterator when subreddit is exhausted
+                sub_iterators[f"{subreddit_name}:{fetch_method}"] = None
                 break
-        except Exception as e:
-            print(f"[Reddit Error] r/{subreddit_name} attempt {attempt+1}: {e}")
-            time.sleep(1)
+
+            if post.stickied:
+                continue
+            url = str(post.url)
+
+            # Handle Reddit galleries
+            if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
+                gallery_urls = []
+                for item in list(post.media_metadata.values())[:25]:
+                    if "s" in item and "u" in item["s"]:
+                        gallery_url = html.unescape(item["s"]["u"])
+                        if gallery_url not in seen_posts:
+                            gallery_urls.append(gallery_url)
+                if gallery_urls:
+                    posts.append(gallery_urls)
+                continue
+
+            # Ignore Imgur albums/galleries
+            if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
+                continue
+            if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
+                url += ".jpg"
+
+            # Filter by content type
+            if (
+                (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
+                or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
+                or (content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url or "redgifs" in url))
+            ):
+                if url not in seen_posts:
+                    posts.append(url)
+
+        if posts:
+            flat = []
+            for p in posts:
+                if isinstance(p, list):
+                    flat.append(p)
+                else:
+                    flat.append(p)
+                    seen_posts.add(p)
+            posts = flat
+            if len(seen_posts) > 5000:
+                seen_posts.clear()
+
+    except Exception as e:
+        print(f"[Reddit Error] r/{subreddit_name}: {e}")
+
     print(f"[Fetched] r/{subreddit_name} -> {len(posts)} posts")
     return posts
 
@@ -168,7 +184,6 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
 
 @client.command()
 async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "img"):
-    """Auto a single subreddit with delay"""
     global auto_tasks
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
@@ -209,7 +224,6 @@ async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "im
 
 @client.command()
 async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str = "img"):
-    """Auto all pools or a specific pool"""
     global auto_tasks
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
@@ -226,7 +240,6 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
 
     skip_flags[ctx.channel.id] = False
 
-    # Select pool
     if pool_name=="nsfw":
         pool = nsfw_pool
     elif pool_name=="hentai":
@@ -301,4 +314,3 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-                                                            
