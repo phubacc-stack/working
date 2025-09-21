@@ -17,7 +17,7 @@ from rapidfuzz import process, fuzz
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v6.1-auto-pools'
+version = 'v6.2-auto-pools-r'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 
@@ -34,11 +34,13 @@ threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
 user_token = os.getenv("user_token")
 bot = commands.Bot(command_prefix="!")
 
-# --- Reddit setup ---
+# --- Reddit setup with your credentials ---
 reddit = praw.Reddit(
-    client_id=os.getenv("praw_client_id"),
-    client_secret=os.getenv("praw_client_secret"),
-    user_agent="discord-bot"
+    client_id="FkQW0wCGFovtAw",
+    client_secret="NGFVQ4u9RUJcJX9SpEhmLsAKmiCydQ",
+    password="Justforthis69!",
+    user_agent="Justforthis69!",
+    username="Justforthis69"
 )
 
 # --- Load pools from pools.json ---
@@ -143,6 +145,19 @@ async def skip(ctx):
     global current_index
     current_index += 1
     await ctx.send("⏭ Skipped to next subreddit.")
+
+# --- NEW: !r command for single subreddit fetch ---
+@bot.command()
+async def r(ctx, sub: str, limit: int = 5):
+    """Fetch a few posts from a subreddit without auto mode"""
+    posts = fetch_subreddit_posts(sub, limit=limit)
+    if not posts:
+        await ctx.send(f"⚠ Could not fetch from r/{sub}")
+        return
+    await ctx.send(f"📥 Fetching {limit} posts from **r/{sub}**")
+    for submission in posts:
+        await send_post(ctx, submission)
+        await asyncio.sleep(2)
 
 # --- Run bot ---
 if user_token:
