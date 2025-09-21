@@ -92,10 +92,12 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                 continue
             url = str(post.url)
 
-            # Handle Reddit galleries
+            # Handle Reddit galleries with sorting
             if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                 gallery_urls = []
-                for item in list(post.media_metadata.values())[:25]:
+                # Sort gallery items by their URL (or you can adjust sorting criteria here)
+                sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])  
+                for _, item in sorted_items[:25]:
                     if "s" in item and "u" in item["s"]:
                         gallery_url = html.unescape(item["s"]["u"])
                         if gallery_url not in seen_posts:
