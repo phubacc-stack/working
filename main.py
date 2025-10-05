@@ -17,7 +17,7 @@ from rapidfuzz import process, fuzz
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.6-auto-pool-random3'
+version = 'v5.7-auto-nsfw-search'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -87,19 +87,19 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                 sub_iterators[f"{subreddit_name}:{fetch_method}"] = None
                 break
 
-            if post.stickied:
+            if post.stickied or not getattr(post, "over_18", False):
                 continue
             url = str(post.url)
 
-            # Handle galleries
-            if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
+            # --- Proper gallery handling ---
+            if "reddit.com/gallery" in url and hasattr(post, "gallery_data") and hasattr(post, "media_metadata"):
                 gallery_urls = []
-                sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])
-                for _, item in sorted_items[:25]:
-                    if "s" in item and "u" in item["s"]:
-                        gallery_url = html.unescape(item["s"]["u"])
-                        if gallery_url not in seen_posts:
-                            gallery_urls.append(gallery_url)
+                for item in post.gallery_data["items"]:
+                    media_id = item["media_id"]
+                    if media_id in post.media_metadata:
+                        m = post.media_metadata[media_id]
+                        if "s" in m and "u" in m["s"]:
+                            gallery_urls.append(html.unescape(m["s"]["u"]))
                 if gallery_urls:
                     posts.append(gallery_urls)
                 continue
@@ -341,11 +341,11 @@ async def pool(ctx, pool_name: str = "both", amount: int = 5):
     picks = pyrandom.sample(pool, min(amount, len(pool)))
     await ctx.send(f"🎲 Random from {pool_name} pool:\n" + ", ".join([f"r/{p}" for p in picks]))
 
-# --- UPDATED SEARCH COMMAND WITH GALLERY SUPPORT ---
+# --- UPDATED SEARCH COMMAND ---
 @client.command()
 async def search(ctx, *args, amount: int = 5, content_type: str = "img"):
     """
-    Search Reddit including NSFW pools with gallery support.
+    Search only NSFW/18+ subreddits with gallery support.
     Usage: !search keyword1 keyword2 ... [amount] [content_type]
     """
     if not args:
@@ -353,37 +353,42 @@ async def search(ctx, *args, amount: int = 5, content_type: str = "img"):
         return
 
     keywords = list(args)
-    try:
-        if args[-1].isdigit():
-            amount = int(args[-1])
-            keywords = keywords[:-1]
-        if args[-2] in ["img", "gif", "vid", "random"]:
-            content_type = args[-2]
-            keywords = keywords[:-1]
-    except:
-        pass
+
+    # --- Safer parsing for amount and type ---
+    if len(args) >= 1 and args[-1].isdigit():
+        amount = int(args[-1])
+        keywords = keywords[:-1]
+    if len(args) >= 1 and args[-1] in ["img", "gif", "vid", "random"]:
+        content_type = args[-1]
+        keywords = keywords[:-1]
 
     query = " ".join(keywords)
-    await ctx.send(f"🔎 Searching Reddit for: **{query}**")
+    await ctx.send(f"🔎 Searching NSFW Reddit for: **{query}**")
 
     collected = []
     try:
-        subreddits_to_search = ["all"] + nsfw_pool + hentai_pool
+        # ✅ Only NSFW pools
+        subreddits_to_search = nsfw_pool + hentai_pool
         for sub in subreddits_to_search:
             results = reddit.subreddit(sub).search(query, sort="relevance", limit=50)
             for post in results:
-                if post.stickied:
+                if post.stickied or not getattr(post, "over_18", False):
                     continue
-                urls_to_add = []
 
+                urls_to_add = []
                 url = str(post.url)
-                # Handle galleries
-                if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
-                    sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])
-                    for _, item in sorted_items[:25]:
-                        if "s" in item and "u" in item["s"]:
-                            gallery_url = html.unescape(item["s"]["u"])
-                            urls_to_add.append(gallery_url)
+
+                # --- Handle gallery with proper order ---
+                if "reddit.com/gallery" in url and hasattr(post, "gallery_data") and hasattr(post, "media_metadata"):
+                    gallery_urls = []
+                    for item in post.gallery_data["items"]:
+                        media_id = item["media_id"]
+                        if media_id in post.media_metadata:
+                            m = post.media_metadata[media_id]
+                            if "s" in m and "u" in m["s"]:
+                                gallery_urls.append(html.unescape(m["s"]["u"]))
+                    if gallery_urls:
+                        urls_to_add.extend(gallery_urls)
                 else:
                     # Ignore Imgur albums
                     if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
@@ -392,16 +397,17 @@ async def search(ctx, *args, amount: int = 5, content_type: str = "img"):
                         url += ".jpg"
                     urls_to_add.append(url)
 
-                # Filter by content type
+                # --- Filter by content type ---
                 filtered_urls = []
                 for u in urls_to_add:
                     if (
                         (content_type == "img" and u.endswith((".jpg", ".jpeg", ".png")))
                         or (content_type == "gif" and (u.endswith(".gif") or "redgifs" in u))
                         or (content_type == "vid" and ("v.redd.it" in u or u.endswith(".mp4")))
-                        or (content_type == "random" and (u.endswith((".jpg",".jpeg",".png",".gif",".gifv",".mp4")) or "v.redd.it" in u or "redgifs" in u))
+                        or (content_type == "random" and (u.endswith((".jpg", ".jpeg", ".png", ".gif", ".gifv", ".mp4")) or "v.redd.it" in u or "redgifs" in u))
                     ):
                         filtered_urls.append(u)
+
                 if filtered_urls:
                     collected.append(filtered_urls if len(filtered_urls) > 1 else filtered_urls[0])
 
@@ -416,12 +422,13 @@ async def search(ctx, *args, amount: int = 5, content_type: str = "img"):
         for item in collected:
             await send_with_gallery_support(ctx.channel, item)
     else:
-        await ctx.send(f"❌ No results found for query: {query}")
+        await ctx.send(f"❌ No NSFW results found for query: {query}")
 
 @client.command()
 async def autostop(ctx):
     if ctx.channel.id in auto_tasks:
         auto_tasks[ctx.channel.id].cancel()
+        await asyncio.sleep(0)  # allow cancellation to propagate
         await ctx.send("⏹️ Auto stopped.")
     else:
         await ctx.send("⚠️ No auto running here.")
@@ -454,4 +461,3 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-    
