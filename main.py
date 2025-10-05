@@ -341,18 +341,17 @@ async def pool(ctx, pool_name: str = "both", amount: int = 5):
     picks = pyrandom.sample(pool, min(amount, len(pool)))
     await ctx.send(f"🎲 Random from {pool_name} pool:\n" + ", ".join([f"r/{p}" for p in picks]))
 
-# --- UPDATED SEARCH COMMAND ---
+# --- UPDATED SEARCH COMMAND WITH GALLERY SUPPORT ---
 @client.command()
 async def search(ctx, *args, amount: int = 5, content_type: str = "img"):
     """
-    Search Reddit with multi-word query.
+    Search Reddit including NSFW pools with gallery support.
     Usage: !search keyword1 keyword2 ... [amount] [content_type]
     """
     if not args:
         await ctx.send("⚠️ Please provide search keywords.")
         return
 
-    # Extract keywords (all arguments except last two if they are numbers/type)
     keywords = list(args)
     try:
         if args[-1].isdigit():
@@ -369,28 +368,45 @@ async def search(ctx, *args, amount: int = 5, content_type: str = "img"):
 
     collected = []
     try:
-        results = reddit.subreddit("all").search(query, sort="relevance", limit=50)
-        for post in results:
-            url = str(post.url)
-            if post.stickied:
-                continue
+        subreddits_to_search = ["all"] + nsfw_pool + hentai_pool
+        for sub in subreddits_to_search:
+            results = reddit.subreddit(sub).search(query, sort="relevance", limit=50)
+            for post in results:
+                if post.stickied:
+                    continue
+                urls_to_add = []
 
-            if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
-                continue
-            if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
-                url += ".jpg"
+                url = str(post.url)
+                # Handle galleries
+                if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
+                    sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])
+                    for _, item in sorted_items[:25]:
+                        if "s" in item and "u" in item["s"]:
+                            gallery_url = html.unescape(item["s"]["u"])
+                            urls_to_add.append(gallery_url)
+                else:
+                    # Ignore Imgur albums
+                    if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
+                        continue
+                    if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
+                        url += ".jpg"
+                    urls_to_add.append(url)
 
-            if (
-                content_type == "img" and url.endswith((".jpg", ".jpeg", ".png"))
-            ) or (
-                content_type == "gif" and (url.endswith(".gif") or "redgifs" in url)
-            ) or (
-                content_type == "vid" and ("v.redd.it" in url or url.endswith(".mp4"))
-            ) or (
-                content_type == "random" and url.endswith((".jpg",".jpeg",".png",".gif",".gifv",".mp4")) or "v.redd.it" in url or "redgifs" in url
-            ):
-                collected.append(url)
+                # Filter by content type
+                filtered_urls = []
+                for u in urls_to_add:
+                    if (
+                        (content_type == "img" and u.endswith((".jpg", ".jpeg", ".png")))
+                        or (content_type == "gif" and (u.endswith(".gif") or "redgifs" in u))
+                        or (content_type == "vid" and ("v.redd.it" in u or u.endswith(".mp4")))
+                        or (content_type == "random" and (u.endswith((".jpg",".jpeg",".png",".gif",".gifv",".mp4")) or "v.redd.it" in u or "redgifs" in u))
+                    ):
+                        filtered_urls.append(u)
+                if filtered_urls:
+                    collected.append(filtered_urls if len(filtered_urls) > 1 else filtered_urls[0])
 
+                if len(collected) >= amount:
+                    break
             if len(collected) >= amount:
                 break
     except Exception as e:
@@ -438,4 +454,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-                                                          
+    
