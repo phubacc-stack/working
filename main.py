@@ -249,21 +249,16 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
         pool = nsfw_pool
     elif pool_name == "hentai":
         pool = hentai_pool
-    elif pool_name == "both":
-        pool = nsfw_pool + hentai_pool
-    elif pool_name == "random":
-        pool = nsfw_pool + hentai_pool
     else:
-        pool = []
+        pool = nsfw_pool + hentai_pool
 
     async def auto_loop(channel):
         while True:
             try:
                 if pool_name == "random":
-                    # Pick 3 new random subs every cycle
                     chosen_subs = pyrandom.sample(pool, min(3, len(pool)))
                     for sub in chosen_subs:
-                        ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
+                        ctype = pyrandom.choice(["img","gif","vid"]) if content_type=="random" else content_type
                         posts = get_filtered_posts(sub, ctype, batch_size=30)
                         if not posts:
                             continue
@@ -346,22 +341,66 @@ async def pool(ctx, pool_name: str = "both", amount: int = 5):
     picks = pyrandom.sample(pool, min(amount, len(pool)))
     await ctx.send(f"🎲 Random from {pool_name} pool:\n" + ", ".join([f"r/{p}" for p in picks]))
 
+# --- UPDATED SEARCH COMMAND ---
 @client.command()
-async def search(ctx, subreddit: str, amount: int = 5, content_type: str = "img"):
-    subreddit = correct_subreddit(subreddit)
+async def search(ctx, *args, amount: int = 5, content_type: str = "img"):
+    """
+    Search Reddit with multi-word query.
+    Usage: !search keyword1 keyword2 ... [amount] [content_type]
+    """
+    if not args:
+        await ctx.send("⚠️ Please provide search keywords.")
+        return
+
+    # Extract keywords (all arguments except last two if they are numbers/type)
+    keywords = list(args)
+    try:
+        if args[-1].isdigit():
+            amount = int(args[-1])
+            keywords = keywords[:-1]
+        if args[-2] in ["img", "gif", "vid", "random"]:
+            content_type = args[-2]
+            keywords = keywords[:-1]
+    except:
+        pass
+
+    query = " ".join(keywords)
+    await ctx.send(f"🔎 Searching Reddit for: **{query}**")
+
     collected = []
-    posts = get_filtered_posts(subreddit, content_type, batch_size=amount*2)
-    for post in posts:
-        if len(collected) >= amount:
-            break
-        collected.append(post)
+    try:
+        results = reddit.subreddit("all").search(query, sort="relevance", limit=50)
+        for post in results:
+            url = str(post.url)
+            if post.stickied:
+                continue
+
+            if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
+                continue
+            if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
+                url += ".jpg"
+
+            if (
+                content_type == "img" and url.endswith((".jpg", ".jpeg", ".png"))
+            ) or (
+                content_type == "gif" and (url.endswith(".gif") or "redgifs" in url)
+            ) or (
+                content_type == "vid" and ("v.redd.it" in url or url.endswith(".mp4"))
+            ) or (
+                content_type == "random" and url.endswith((".jpg",".jpeg",".png",".gif",".gifv",".mp4")) or "v.redd.it" in url or "redgifs" in url
+            ):
+                collected.append(url)
+
+            if len(collected) >= amount:
+                break
+    except Exception as e:
+        print(f"[Search Error] {e}")
 
     if collected:
-        await ctx.send(f"🔎 Results from r/{subreddit}:")
         for item in collected:
             await send_with_gallery_support(ctx.channel, item)
     else:
-        await ctx.send(f"❌ No results found for r/{subreddit}.")
+        await ctx.send(f"❌ No results found for query: {query}")
 
 @client.command()
 async def autostop(ctx):
@@ -399,4 +438,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-                
+                                                          
