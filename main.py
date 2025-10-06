@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 import html
 from rapidfuzz import process, fuzz
 
+# --- Ensure different randomness every bot run ---
+pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
+
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
@@ -95,7 +98,6 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
             # Handle Reddit galleries with sorting
             if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                 gallery_urls = []
-                # Sort gallery items by their URL (or you can adjust sorting criteria here)
                 sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])  
                 for _, item in sorted_items[:25]:
                     if "s" in item and "u" in item["s"]:
@@ -252,6 +254,7 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
     async def auto_loop(channel):
         while True:
             try:
+                # pick a fresh random sub each cycle
                 sub = pyrandom.choice(pool)
                 ctype = pyrandom.choice(["img","gif","vid"]) if content_type=="random" else content_type
                 posts = get_filtered_posts(sub, ctype)
