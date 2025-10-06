@@ -17,7 +17,7 @@ from rapidfuzz import process, fuzz
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.8-auto-nsfw-search-random'
+version = 'v5.5-auto-pool-pause-search'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -51,7 +51,7 @@ reddit = praw.Reddit(
 
 client = commands.Bot(command_prefix="!")
 
-# --- Fuzzy subreddit correction ---
+# --- Helper: Fuzzy subreddit correction ---
 def correct_subreddit(subreddit_name):
     match, score, _ = process.extractOne(subreddit_name, all_subs_pool, scorer=fuzz.ratio)
     if score >= 70:
@@ -59,7 +59,7 @@ def correct_subreddit(subreddit_name):
         return match
     return subreddit_name
 
-# --- Iterator cache ---
+# --- Iterator cache to walk through subs fully ---
 sub_iterators = {}
 
 def get_subreddit_iterator(subreddit_name, fetch_method):
@@ -70,7 +70,7 @@ def get_subreddit_iterator(subreddit_name, fetch_method):
         sub_iterators[key] = iter(listings)
     return sub_iterators[key]
 
-# --- Fetch posts ---
+# --- Helper: Get unique posts (walk through subreddit) ---
 def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_size=25):
     global seen_posts
     posts = []
@@ -84,33 +84,34 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
             try:
                 post = next(iterator)
             except StopIteration:
+                # Reset iterator when subreddit is exhausted
                 sub_iterators[f"{subreddit_name}:{fetch_method}"] = None
                 break
 
-            if post.stickied or not getattr(post, "over_18", False):
+            if post.stickied:
                 continue
             url = str(post.url)
 
-            # --- Proper gallery handling ---
-            if "reddit.com/gallery" in url and hasattr(post, "gallery_data") and hasattr(post, "media_metadata"):
+            # Handle Reddit galleries with sorting
+            if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                 gallery_urls = []
-                for item in post.gallery_data["items"]:
-                    media_id = item["media_id"]
-                    if media_id in post.media_metadata:
-                        m = post.media_metadata[media_id]
-                        if "s" in m and "u" in m["s"]:
-                            gallery_urls.append(html.unescape(m["s"]["u"]))
+                sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])
+                for _, item in sorted_items[:25]:
+                    if "s" in item and "u" in item["s"]:
+                        gallery_url = html.unescape(item["s"]["u"])
+                        if gallery_url not in seen_posts:
+                            gallery_urls.append(gallery_url)
                 if gallery_urls:
                     posts.append(gallery_urls)
                 continue
 
-            # Ignore Imgur albums
+            # Ignore Imgur albums/galleries
             if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
                 continue
             if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
                 url += ".jpg"
 
-            # Filter by type
+            # Filter by content type
             if (
                 (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
                 or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
@@ -183,49 +184,11 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
     else:
         await ctx.send("❌ No posts found.")
 
-# --- AUTO with true randomness ---
-async def auto_post_loop(channel, pool_choice, content_type, delay):
-    while True:
-        try:
-            # ✅ Pick random pool + subreddit every cycle
-            if pool_choice == "nsfw":
-                pool = nsfw_pool
-            elif pool_choice == "hentai":
-                pool = hentai_pool
-            elif pool_choice == "random":
-                pool = pyrandom.choice([nsfw_pool, hentai_pool])
-            else:
-                pool = nsfw_pool
-
-            sub = pyrandom.choice(pool)
-            ctype = pyrandom.choice(["img","gif","vid"]) if content_type=="random" else content_type
-
-            posts = get_filtered_posts(sub, ctype)
-            if not posts:
-                continue
-
-            await channel.send(f"▶ Now playing from r/{sub}")
-            for post in posts:
-                while pause_flags.get(channel.id, False):
-                    await asyncio.sleep(1)
-                if skip_flags[channel.id]:
-                    skip_flags[channel.id] = False
-                    break
-                await send_with_gallery_support(channel, post)
-                await asyncio.sleep(delay)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            print(f"[Auto Error] {e}")
-            await asyncio.sleep(delay)
-
 @client.command()
-async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str = "img"):
+async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "img"):
+    global auto_tasks
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
-        return
-    if pool_name not in ["nsfw", "hentai", "both", "random"]:
-        await ctx.send("⚠️ Pool must be nsfw | hentai | both | random.")
         return
     if content_type not in ["img", "gif", "vid", "random"]:
         await ctx.send("⚠️ Type must be img | gif | vid | random.")
@@ -236,90 +199,89 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
 
     skip_flags[ctx.channel.id] = False
     pause_flags[ctx.channel.id] = False
-    task = asyncio.create_task(auto_post_loop(ctx.channel, pool_name, content_type, seconds))
+
+    async def auto_loop(channel):
+        while True:
+            try:
+                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type=="random" else content_type
+                posts = get_filtered_posts(subreddit, ctype)
+                if not posts:
+                    await channel.send(f"❌ No posts found for r/{subreddit}.")
+                    return
+                await channel.send(f"▶ Now playing from r/{subreddit}")
+                for post in posts:
+                    # --- pause handling ---
+                    while pause_flags.get(channel.id, False):
+                        await asyncio.sleep(1)
+                    if skip_flags[ctx.channel.id]:
+                        skip_flags[ctx.channel.id] = False
+                        break
+                    await send_with_gallery_support(channel, post)
+                    await asyncio.sleep(seconds)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[AutoSub Error] {e}")
+                await asyncio.sleep(seconds)
+
+    task = asyncio.create_task(auto_loop(ctx.channel))
+    auto_tasks[ctx.channel.id] = task
+    await ctx.send(f"▶️ AutoSub started for r/{subreddit} every {seconds}s for {content_type}.")
+
+@client.command()
+async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str = "img"):
+    global auto_tasks
+    if seconds < 2:
+        await ctx.send("⚠️ Minimum 2 seconds.")
+        return
+    if pool_name not in ["nsfw", "hentai", "both"]:
+        await ctx.send("⚠️ Pool must be nsfw | hentai | both.")
+        return
+    if content_type not in ["img", "gif", "vid", "random"]:
+        await ctx.send("⚠️ Type must be img | gif | vid | random.")
+        return
+    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
+        await ctx.send("⚠️ Auto already running here.")
+        return
+
+    skip_flags[ctx.channel.id] = False
+    pause_flags[ctx.channel.id] = False
+
+    if pool_name=="nsfw":
+        pool = nsfw_pool
+    elif pool_name=="hentai":
+        pool = hentai_pool
+    else:
+        pool = nsfw_pool + hentai_pool
+
+    async def auto_loop(channel):
+        while True:
+            try:
+                sub = pyrandom.choice(pool)
+                ctype = pyrandom.choice(["img","gif","vid"]) if content_type=="random" else content_type
+                posts = get_filtered_posts(sub, ctype)
+                if not posts:
+                    continue
+                await channel.send(f"▶ Now playing from r/{sub}")
+                for post in posts:
+                    # --- pause handling ---
+                    while pause_flags.get(channel.id, False):
+                        await asyncio.sleep(1)
+                    if skip_flags[ctx.channel.id]:
+                        skip_flags[ctx.channel.id] = False
+                        break
+                    await send_with_gallery_support(channel, post)
+                    await asyncio.sleep(seconds)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[Auto Error] {e}")
+                await asyncio.sleep(seconds)
+
+    task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
     await ctx.send(f"▶️ Auto started for {pool_name} pool every {seconds}s for {content_type}.")
 
-# --- SEARCH with fallbacks ---
-@client.command()
-async def search(ctx, *args, amount: int = 5, content_type: str = "img"):
-    if not args:
-        await ctx.send("⚠️ Please provide search keywords.")
-        return
-
-    keywords = list(args)
-    if len(args) >= 1 and args[-1].isdigit():
-        amount = int(args[-1])
-        keywords = keywords[:-1]
-    if len(args) >= 1 and args[-1] in ["img", "gif", "vid", "random"]:
-        content_type = args[-1]
-        keywords = keywords[:-1]
-
-    query = " ".join(keywords)
-    await ctx.send(f"🔎 Searching NSFW Reddit for: **{query}**")
-
-    collected = []
-    try:
-        subreddits_to_search = nsfw_pool + hentai_pool
-        for sub in subreddits_to_search:
-            subreddit = reddit.subreddit(sub)
-
-            # ✅ Try multiple sorts
-            for sort_type in ["relevance", "hot", "new"]:
-                results = subreddit.search(query, sort=sort_type, limit=50)
-                for post in results:
-                    if post.stickied or not getattr(post, "over_18", False):
-                        continue
-
-                    urls_to_add = []
-                    url = str(post.url)
-
-                    if "reddit.com/gallery" in url and hasattr(post, "gallery_data") and hasattr(post, "media_metadata"):
-                        gallery_urls = []
-                        for item in post.gallery_data["items"]:
-                            media_id = item["media_id"]
-                            if media_id in post.media_metadata:
-                                m = post.media_metadata[media_id]
-                                if "s" in m and "u" in m["s"]:
-                                    gallery_urls.append(html.unescape(m["s"]["u"]))
-                        if gallery_urls:
-                            urls_to_add.extend(gallery_urls)
-                    else:
-                        if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
-                            continue
-                        if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
-                            url += ".jpg"
-                        urls_to_add.append(url)
-
-                    filtered_urls = []
-                    for u in urls_to_add:
-                        if (
-                            (content_type == "img" and u.endswith((".jpg", ".jpeg", ".png")))
-                            or (content_type == "gif" and (u.endswith(".gif") or "redgifs" in u))
-                            or (content_type == "vid" and ("v.redd.it" in u or u.endswith(".mp4")))
-                            or (content_type == "random" and (u.endswith((".jpg", ".jpeg", ".png", ".gif", ".gifv", ".mp4")) or "v.redd.it" in u or "redgifs" in u))
-                        ):
-                            filtered_urls.append(u)
-
-                    if filtered_urls:
-                        collected.append(filtered_urls if len(filtered_urls) > 1 else filtered_urls[0])
-
-                    if len(collected) >= amount:
-                        break
-                if len(collected) >= amount:
-                    break
-            if len(collected) >= amount:
-                break
-    except Exception as e:
-        print(f"[Search Error] {e}")
-
-    if collected:
-        for item in collected:
-            await send_with_gallery_support(ctx.channel, item)
-    else:
-        await ctx.send(f"❌ No NSFW results found for query: {query}")
-
-# --- Other commands ---
 @client.command()
 async def skip(ctx):
     if ctx.channel.id in skip_flags:
@@ -346,10 +308,45 @@ async def resume(ctx):
     await ctx.send("▶️ Auto resumed.")
 
 @client.command()
+async def pool(ctx, pool_name: str = "both", amount: int = 5):
+    if pool_name not in ["nsfw", "hentai", "both"]:
+        await ctx.send("⚠️ Pool must be nsfw | hentai | both.")
+        return
+    if pool_name == "nsfw":
+        pool = nsfw_pool
+    elif pool_name == "hentai":
+        pool = hentai_pool
+    else:
+        pool = nsfw_pool + hentai_pool
+
+    if not pool:
+        await ctx.send("⚠️ Pool is empty.")
+        return
+
+    picks = pyrandom.sample(pool, min(amount, len(pool)))
+    await ctx.send(f"🎲 Random from {pool_name} pool:\n" + ", ".join([f"r/{p}" for p in picks]))
+
+@client.command()
+async def search(ctx, subreddit: str, amount: int = 5, content_type: str = "img"):
+    subreddit = correct_subreddit(subreddit)
+    collected = []
+    posts = get_filtered_posts(subreddit, content_type, batch_size=amount*2)
+    for post in posts:
+        if len(collected) >= amount:
+            break
+        collected.append(post)
+
+    if collected:
+        await ctx.send(f"🔎 Results from r/{subreddit}:")
+        for item in collected:
+            await send_with_gallery_support(ctx.channel, item)
+    else:
+        await ctx.send(f"❌ No results found for r/{subreddit}.")
+
+@client.command()
 async def autostop(ctx):
     if ctx.channel.id in auto_tasks:
         auto_tasks[ctx.channel.id].cancel()
-        await asyncio.sleep(0)
         await ctx.send("⏹️ Auto stopped.")
     else:
         await ctx.send("⚠️ No auto running here.")
@@ -359,7 +356,7 @@ async def stats(ctx):
     uptime = datetime.now(timezone.utc) - start_time
     await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
-# --- Keepalive ---
+# --- Keepalive Pin ---
 app = Flask("")
 
 @app.route("/")
@@ -380,5 +377,6 @@ def ping():
 threading.Thread(target=run).start()
 threading.Thread(target=ping, daemon=True).start()
 
+# --- Run Bot ---
 client.run(user_token)
-                       
+    
