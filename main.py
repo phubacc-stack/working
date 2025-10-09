@@ -123,11 +123,14 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                 if url not in seen_posts:
                     posts.append(url)
 
+        # Flatten and mark seen
         if posts:
             flat = []
             for p in posts:
                 if isinstance(p, list):
-                    flat.append(p)
+                    flat.extend(p)
+                    for url in p:
+                        seen_posts.add(url)
                 else:
                     flat.append(p)
                     seen_posts.add(p)
@@ -202,20 +205,26 @@ async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "im
     skip_flags[ctx.channel.id] = False
 
     async def auto_loop(channel):
+        ctype = content_type
+        if content_type == "random":
+            ctype = pyrandom.choice(["img", "gif", "vid"])
+
+        await channel.send(f"▶ Now playing from r/{subreddit}")
+
         while True:
             try:
-                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type=="random" else content_type
-                posts = get_filtered_posts(subreddit, ctype)
+                posts = get_filtered_posts(subreddit, ctype, batch_size=50)
                 if not posts:
-                    await channel.send(f"❌ No posts found for r/{subreddit}.")
-                    return
-                await channel.send(f"▶ Now playing from r/{subreddit}")
+                    await asyncio.sleep(seconds)
+                    continue
+
                 for post in posts:
                     if skip_flags[ctx.channel.id]:
                         skip_flags[ctx.channel.id] = False
                         break
                     await send_with_gallery_support(channel, post)
                     await asyncio.sleep(seconds)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -252,21 +261,35 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
         pool = nsfw_pool + hentai_pool
 
     async def auto_loop(channel):
+        shuffled_pool = pool.copy()
+        pyrandom.shuffle(shuffled_pool)
+        sub_index = 0
+
         while True:
             try:
-                # pick a fresh random sub each cycle
-                sub = pyrandom.choice(pool)
+                if sub_index >= len(shuffled_pool):
+                    sub_index = 0
+                    pyrandom.shuffle(shuffled_pool)
+
+                sub = shuffled_pool[sub_index]
                 ctype = pyrandom.choice(["img","gif","vid"]) if content_type=="random" else content_type
-                posts = get_filtered_posts(sub, ctype)
-                if not posts:
-                    continue
+
                 await channel.send(f"▶ Now playing from r/{sub}")
+
+                posts = get_filtered_posts(sub, ctype, batch_size=50)
+                if not posts:
+                    sub_index += 1
+                    continue
+
                 for post in posts:
                     if skip_flags[ctx.channel.id]:
                         skip_flags[ctx.channel.id] = False
                         break
                     await send_with_gallery_support(channel, post)
                     await asyncio.sleep(seconds)
+
+                sub_index += 1
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -319,3 +342,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+            
