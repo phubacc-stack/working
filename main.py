@@ -20,7 +20,7 @@ pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.4-auto-pool-fullwalk'
+version = 'v5.6-auto-pool-fullwalk-search-pause'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -73,6 +73,22 @@ def get_subreddit_iterator(subreddit_name, fetch_method):
         sub_iterators[key] = iter(listings)
     return sub_iterators[key]
 
+# --- Helper: Filter URLs by type ---
+def filter_url(url, content_type):
+    if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
+        return None
+    if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
+        url += ".jpg"
+    if content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url):
+        return url
+    if content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")):
+        return url
+    if content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url or "redgifs" in url):
+        return url
+    if content_type == "any":
+        return url
+    return None
+
 # --- Helper: Get unique posts (walk through subreddit) ---
 def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_size=25):
     global seen_posts
@@ -87,51 +103,16 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
             try:
                 post = next(iterator)
             except StopIteration:
-                # Reset iterator when subreddit is exhausted
                 sub_iterators[f"{subreddit_name}:{fetch_method}"] = None
                 break
-
             if post.stickied:
                 continue
-            url = str(post.url)
-
-            # Handle Reddit galleries with sorting
-            if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
-                gallery_urls = []
-                sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])  
-                for _, item in sorted_items[:25]:
-                    if "s" in item and "u" in item["s"]:
-                        gallery_url = html.unescape(item["s"]["u"])
-                        if gallery_url not in seen_posts:
-                            gallery_urls.append(gallery_url)
-                if gallery_urls:
-                    posts.append(gallery_urls)
-                continue
-
-            # Ignore Imgur albums/galleries
-            if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
-                continue
-            if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
-                url += ".jpg"
-
-            # Filter by content type
-            if (
-                (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
-                or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
-                or (content_type == "vid" and (url.endswith(".mp4") or "v.redd.it" in url or "redgifs" in url))
-            ):
-                if url not in seen_posts:
-                    posts.append(url)
+            url = filter_url(str(post.url), content_type)
+            if url and url not in seen_posts:
+                posts.append(url)
 
         if posts:
-            flat = []
-            for p in posts:
-                if isinstance(p, list):
-                    flat.append(p)
-                else:
-                    flat.append(p)
-                    seen_posts.add(p)
-            posts = flat
+            seen_posts.update(posts)
             if len(seen_posts) > 5000:
                 seen_posts.clear()
 
@@ -144,6 +125,7 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
 # --- Auto system ---
 auto_tasks = {}
 skip_flags = {}
+pause_flags = {}
 
 async def safe_send(channel, url):
     try:
@@ -187,23 +169,98 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
         await ctx.send("❌ No posts found.")
 
 @client.command()
+async def search(ctx, *, query: str):
+    """Search Reddit NSFW/Hentai pools (and fallback to global) with optional content type."""
+    parts = query.split()
+    content_type = "any"
+    if parts[-1].lower() in ["img", "gif", "vid"]:
+        content_type = parts[-1].lower()
+        query = " ".join(parts[:-1])
+
+    pool = nsfw_pool + hentai_pool
+    collected = []
+    tries = 0
+    max_tries = 10
+
+    await ctx.send(f"🔎 Searching for '{query}' ({content_type})...")
+
+    while len(collected) < 10 and tries < max_tries:
+        sub = pyrandom.choice(pool)
+        try:
+            subreddit = reddit.subreddit(sub)
+            results = subreddit.search(query, sort="relevance", time_filter="all", limit=15)
+            for post in results:
+                if post.over_18 and not post.stickied:
+                    url = filter_url(str(post.url), content_type)
+                    if url and url not in seen_posts:
+                        collected.append(url)
+                        seen_posts.add(url)
+                        if len(collected) >= 10:
+                            break
+        except Exception as e:
+            print(f"[Search Error] r/{sub}: {e}")
+        tries += 1
+
+    if not collected:
+        try:
+            await ctx.send("⚠️ Nothing in pools, searching all of Reddit...")
+            results = reddit.subreddit("all").search(query, sort="relevance", time_filter="all", limit=20)
+            for post in results:
+                if post.over_18 and not post.stickied:
+                    url = filter_url(str(post.url), content_type)
+                    if url and url not in seen_posts:
+                        collected.append(url)
+                        seen_posts.add(url)
+                        if len(collected) >= 10:
+                            break
+        except Exception as e:
+            print(f"[Search Error Global] {e}")
+
+    if collected:
+        await ctx.send(f"✅ Found {len(collected)} results for '{query}':")
+        for url in collected:
+            await safe_send(ctx.channel, url)
+    else:
+        await ctx.send(f"❌ No results found for '{query}'.")
+
+@client.command()
+async def pool(ctx):
+    """Show random sample of subs from pools."""
+    sample = pyrandom.sample(all_subs_pool, min(10, len(all_subs_pool)))
+    await ctx.send("🎲 Random subs:\n" + ", ".join(f"r/{s}" for s in sample))
+
+@client.command()
+async def pause(ctx):
+    pause_flags[ctx.channel.id] = True
+    await ctx.send("⏸️ Auto paused.")
+
+@client.command()
+async def resume(ctx):
+    pause_flags[ctx.channel.id] = False
+    await ctx.send("▶️ Auto resumed.")
+
+@client.command()
 async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "img"):
     global auto_tasks
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
         return
-    if content_type not in ["img", "gif", "vid", "random"]:
-        await ctx.send("⚠️ Type must be img | gif | vid | random.")
+    if content_type not in ["img", "gif", "vid", "random", "any"]:
+        await ctx.send("⚠️ Type must be img | gif | vid | any | random.")
         return
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
         await ctx.send("⚠️ Auto already running here.")
         return
 
     skip_flags[ctx.channel.id] = False
+    pause_flags[ctx.channel.id] = False
 
     async def auto_loop(channel):
         while True:
             try:
+                if pause_flags.get(ctx.channel.id):
+                    await asyncio.sleep(2)
+                    continue
                 ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type=="random" else content_type
                 posts = get_filtered_posts(subreddit, ctype)
                 if not posts:
@@ -214,6 +271,9 @@ async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "im
                     if skip_flags[ctx.channel.id]:
                         skip_flags[ctx.channel.id] = False
                         break
+                    if pause_flags.get(ctx.channel.id):
+                        while pause_flags.get(ctx.channel.id):
+                            await asyncio.sleep(2)
                     await send_with_gallery_support(channel, post)
                     await asyncio.sleep(seconds)
             except asyncio.CancelledError:
@@ -235,14 +295,15 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
     if pool_name not in ["nsfw", "hentai", "both"]:
         await ctx.send("⚠️ Pool must be nsfw | hentai | both.")
         return
-    if content_type not in ["img", "gif", "vid", "random"]:
-        await ctx.send("⚠️ Type must be img | gif | vid | random.")
+    if content_type not in ["img", "gif", "vid", "random", "any"]:
+        await ctx.send("⚠️ Type must be img | gif | vid | any | random.")
         return
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
         await ctx.send("⚠️ Auto already running here.")
         return
 
     skip_flags[ctx.channel.id] = False
+    pause_flags[ctx.channel.id] = False
 
     if pool_name=="nsfw":
         pool = nsfw_pool
@@ -254,7 +315,9 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
     async def auto_loop(channel):
         while True:
             try:
-                # pick a fresh random sub each cycle
+                if pause_flags.get(ctx.channel.id):
+                    await asyncio.sleep(2)
+                    continue
                 sub = pyrandom.choice(pool)
                 ctype = pyrandom.choice(["img","gif","vid"]) if content_type=="random" else content_type
                 posts = get_filtered_posts(sub, ctype)
@@ -265,6 +328,9 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
                     if skip_flags[ctx.channel.id]:
                         skip_flags[ctx.channel.id] = False
                         break
+                    if pause_flags.get(ctx.channel.id):
+                        while pause_flags.get(ctx.channel.id):
+                            await asyncio.sleep(2)
                     await send_with_gallery_support(channel, post)
                     await asyncio.sleep(seconds)
             except asyncio.CancelledError:
@@ -319,3 +385,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+            
