@@ -15,11 +15,9 @@ from rapidfuzz import process, fuzz
 
 # --- Ensure randomness ---
 pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
-
-# --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.9-full-gallery-fix'
+version = 'v7.1-full'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -44,10 +42,12 @@ except Exception as e:
 
 all_subs_pool = nsfw_pool + hentai_pool
 
-# --- Reddit API (your credentials) ---
+# --- Reddit API ---
 reddit = praw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
+    username="phubacc-stack",
+    password="Mypassword123!",
     user_agent="NsfwDiscordBot/1.0"
 )
 
@@ -55,16 +55,19 @@ client = commands.Bot(command_prefix="!")
 
 # --- Fuzzy correction ---
 def correct_subreddit(subreddit_name):
-    match, score, _ = process.extractOne(subreddit_name, all_subs_pool, scorer=fuzz.ratio)
-    if score >= 70:
-        print(f"[Fuzzy] Corrected '{subreddit_name}' -> '{match}'")
-        return match
+    try:
+        match, score, _ = process.extractOne(subreddit_name, all_subs_pool, scorer=fuzz.ratio)
+        if score >= 70:
+            print(f"[Fuzzy] Corrected '{subreddit_name}' -> '{match}'")
+            return match
+    except Exception:
+        pass
     return subreddit_name
 
 # --- Iterator cache ---
 sub_iterators = {}
 
-def get_subreddit_iterator(subreddit_name, fetch_method):
+def get_subreddit_iterator(subreddit_name, fetch_method="new"):
     key = f"{subreddit_name}:{fetch_method}"
     if key not in sub_iterators or sub_iterators[key] is None:
         subreddit = reddit.subreddit(subreddit_name)
@@ -89,11 +92,10 @@ def filter_url(url, content_type):
     return None
 
 # --- Fetch posts ---
-def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_size=25):
+def get_filtered_posts(subreddit_name, content_type, fetch_method="new", batch_size=25):
     global seen_posts
     posts = []
     subreddit_name = correct_subreddit(subreddit_name)
-    fetch_method = fetch_method or pyrandom.choice(["hot", "new", "top"])
     print(f"[Fetching] r/{subreddit_name} via {fetch_method}...")
 
     try:
@@ -107,16 +109,15 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
             if post.stickied or not post.over_18:
                 continue
 
-            # Handle galleries separately
             if getattr(post, "is_gallery", False):
                 if post.id not in seen_posts:
                     posts.append(post)
                     seen_posts.add(post.id)
             else:
                 url = filter_url(str(post.url), content_type)
-                if url and url not in seen_posts:
-                    posts.append(url)
-                    seen_posts.add(url)
+                if url and post.id not in seen_posts:
+                    posts.append(post)
+                    seen_posts.add(post.id)
 
         if len(seen_posts) > 5000:
             seen_posts.clear()
@@ -127,185 +128,154 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
     print(f"[Fetched] r/{subreddit_name} -> {len(posts)} posts")
     return posts
 
-# --- Safe send ---
-async def safe_send(channel, url):
+# --- Send helpers ---
+async def safe_send(channel, content):
     try:
-        await channel.send(url)
+        await channel.send(content)
     except Exception as e:
-        print(f"[Discord Error] {e}")
+        print(f"[Discord Send Error] Channel {channel.id}: {e}")
 
-# --- Send with gallery support ---
 async def send_with_gallery_support(channel, item):
     global post_counter
-    if isinstance(item, list):
-        for url in item:
-            await safe_send(channel, url)
-            post_counter += 1
-            await asyncio.sleep(pyrandom.uniform(2, 3))
-    elif getattr(item, "is_gallery", False):
+    if isinstance(item, praw.models.Submission) and getattr(item, "is_gallery", False):
         media = getattr(item, "media_metadata", {})
         gallery_items = getattr(item, "gallery_data", {}).get("items", [])
         for i in gallery_items:
-            media_id = i['media_id']
-            url = media[media_id]['s']['u'].replace("&amp;", "&")
+            media_id = i["media_id"]
+            url = media[media_id]["s"]["u"].replace("&amp;", "&")
             await safe_send(channel, url)
             post_counter += 1
-            await asyncio.sleep(pyrandom.uniform(2, 3))
+            await asyncio.sleep(2.5)
     else:
-        await safe_send(channel, item)
+        await safe_send(channel, item if isinstance(item, str) else f"https://redd.it/{item.id}")
         post_counter += 1
 
-# --- Auto system ---
-auto_tasks = {}
-skip_flags = {}
-pause_flags = {}
-
-async def auto_loop(ctx, pool, content_type, delay):
-    channel = ctx.channel
-    while True:
-        if pause_flags.get(channel.id):
-            await asyncio.sleep(2)
-            continue
-        if skip_flags.pop(channel.id, False):
-            await ctx.send("⏭️ Skipped post")
-        subreddit = pyrandom.choice(pool)
-        posts = get_filtered_posts(subreddit, content_type, fetch_method="hot", batch_size=1)
-        if posts:
-            await send_with_gallery_support(channel, posts[0])
-        await asyncio.sleep(delay)
-
-# --- Commands ---
-@client.command()
-async def auto(ctx, content_type: str = "any", delay: int = 30):
-    if ctx.channel.id in auto_tasks:
-        await ctx.send("⚠️ Auto already running here")
-        return
-    task = asyncio.create_task(auto_loop(ctx, all_subs_pool, content_type, delay))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto started ({content_type}, every {delay}s)")
+# --- Auto state ---
+auto_task = None
+paused = False
 
 @client.command()
-async def autosub(ctx, sub: str, content_type: str = "any", delay: int = 30):
-    if ctx.channel.id in auto_tasks:
-        await ctx.send("⚠️ Auto already running here")
+async def auto(ctx):
+    """Auto fetch from random pool sequentially"""
+    global auto_task
+    if auto_task and not auto_task.done():
+        await ctx.send("⚠️ Auto is already running.")
         return
-    task = asyncio.create_task(auto_loop(ctx, [sub], content_type, delay))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto started for r/{sub} ({content_type}, {delay}s)")
+
+    async def run_auto():
+        global paused
+        while True:
+            if paused:
+                await asyncio.sleep(2)
+                continue
+            pool_choice = pyrandom.choice([nsfw_pool, hentai_pool])
+            sub = pyrandom.choice(pool_choice)
+            posts = get_filtered_posts(sub, "any", fetch_method="new", batch_size=3)
+            for post in posts:
+                await send_with_gallery_support(ctx.channel, post)
+                await asyncio.sleep(5)
+            await asyncio.sleep(10)
+
+    auto_task = asyncio.create_task(run_auto())
+    await ctx.send("▶️ Auto started.")
+
+@client.command()
+async def autosub(ctx, subreddit: str):
+    """Auto fetch sequentially from a specific subreddit"""
+    global auto_task
+    if auto_task and not auto_task.done():
+        await ctx.send("⚠️ Auto is already running.")
+        return
+
+    async def run_autosub():
+        global paused
+        subreddit_name = correct_subreddit(subreddit)
+        while True:
+            if paused:
+                await asyncio.sleep(2)
+                continue
+            posts = get_filtered_posts(subreddit_name, "any", fetch_method="new", batch_size=3)
+            for post in posts:
+                await send_with_gallery_support(ctx.channel, post)
+                await asyncio.sleep(5)
+            await asyncio.sleep(10)
+
+    auto_task = asyncio.create_task(run_autosub())
+    await ctx.send(f"▶️ Auto started for r/{subreddit}")
 
 @client.command()
 async def stop(ctx):
-    task = auto_tasks.pop(ctx.channel.id, None)
-    if task:
-        task.cancel()
-        await ctx.send("⏹️ Auto stopped")
+    global auto_task
+    if auto_task:
+        auto_task.cancel()
+        auto_task = None
+        await ctx.send("⏹️ Auto stopped.")
     else:
-        await ctx.send("❌ No auto running")
-
-@client.command()
-async def skip(ctx):
-    skip_flags[ctx.channel.id] = True
-    await ctx.send("⏭️ Next post will be skipped")
+        await ctx.send("⚠️ Auto is not running.")
 
 @client.command()
 async def pause(ctx):
-    pause_flags[ctx.channel.id] = True
-    await ctx.send("⏸️ Auto paused")
+    global paused
+    paused = True
+    await ctx.send("⏸️ Auto paused.")
 
 @client.command()
 async def resume(ctx):
-    pause_flags[ctx.channel.id] = False
-    await ctx.send("▶️ Auto resumed")
+    global paused
+    paused = False
+    await ctx.send("▶️ Auto resumed.")
+
+@client.command()
+async def skip(ctx):
+    global auto_task
+    if auto_task and not auto_task.done():
+        auto_task.cancel()
+        auto_task = None
+        await auto(ctx)
+    else:
+        await ctx.send("⚠️ Auto is not running.")
 
 @client.command()
 async def pool(ctx):
-    pick = pyrandom.sample(all_subs_pool, min(10, len(all_subs_pool)))
-    await ctx.send("🎲 Random pool: " + ", ".join(pick))
+    pool_choice = pyrandom.choice([nsfw_pool, hentai_pool])
+    sub = pyrandom.choice(pool_choice)
+    await ctx.send(f"🎲 Random pool pick: r/{sub}")
 
 @client.command()
 async def stats(ctx):
     uptime = datetime.now(timezone.utc) - start_time
-    await ctx.send(f"📊 Posts: {post_counter} | Uptime: {uptime} | Version: {version}")
+    await ctx.send(f"📊 Version: {version}\nPosts sent: {post_counter}\nUptime: {uptime}")
 
 @client.command()
 async def search(ctx, *, query: str):
-    parts = query.split()
-    content_type = "any"
-    if parts[-1].lower() in ["img", "gif", "vid"]:
-        content_type = parts[-1].lower()
-        query = " ".join(parts[:-1])
-
-    await ctx.send(f"🔎 Searching '{query}' ({content_type})...")
-
-    collected = []
-
-    # Case 1: Subreddit search
     try:
-        subreddit = reddit.subreddit(query)
-        for post in subreddit.hot(limit=100):
-            if not post.over_18 or post.stickied:
-                continue
-            if getattr(post, "is_gallery", False) or filter_url(str(post.url), content_type):
-                collected.append(post)
-                if len(collected) >= 10:
-                    break
-        if collected:
-            await ctx.send(f"✅ Found {len(collected)} posts in r/{query}:")
-            for item in collected:
-                await send_with_gallery_support(ctx.channel, item)
+        results = [p for p in reddit.subreddit("all").search(query, limit=10) if p.over_18]
+        if not results:
+            await ctx.send("❌ No results found.")
             return
+        for post in results[:5]:
+            if getattr(post, "is_gallery", False):
+                await send_with_gallery_support(ctx.channel, post)
+            else:
+                await safe_send(ctx.channel, str(post.url))
     except Exception as e:
-        print(f"[Subreddit Search Error] {e}")
-
-    # Case 2: Keyword search
-    try:
-        results = reddit.subreddit("all").hot(limit=300)
-        for post in results:
-            if not post.over_18 or post.stickied:
-                continue
-            if query.lower() in post.title.lower() or query.lower() in post.subreddit.display_name.lower():
-                if getattr(post, "is_gallery", False) or filter_url(str(post.url), content_type):
-                    collected.append(post)
-                    if len(collected) >= 10:
-                        break
-    except Exception as e:
-        print(f"[Keyword Search Error] {e}")
-
-    if collected:
-        await ctx.send(f"✅ Found {len(collected)} results for '{query}':")
-        for item in collected:
-            await send_with_gallery_support(ctx.channel, item)
-    else:
-        await ctx.send(f"❌ No results for '{query}'")
-
-# --- Startup ---
-@client.event
-async def on_ready():
-    print(f"[READY] Logged in as {client.user} ({version})")
-    await client.change_presence(activity=discord.Game(name="!search boobs"))
+        await ctx.send(f"❌ Search error: {e}")
 
 # --- Keepalive ---
-app = Flask('')
+app = Flask(__name__)
 
-@app.route('/')
+@app.route("/")
 def home():
-    return "Bot is alive!"
+    return "Bot is running!"
 
 def run_web():
     app.run(host="0.0.0.0", port=8080)
 
-def ping_render():
-    while True:
-        try:
-            requests.get(service_url)
-            print("[PING] Sent keepalive")
-        except Exception as e:
-            print(f"[PING ERROR] {e}")
-        time.sleep(300)
-
-threading.Thread(target=run_web).start()
-threading.Thread(target=ping_render).start()
+def keep_alive():
+    t = threading.Thread(target=run_web)
+    t.start()
 
 # --- Run ---
+keep_alive()
 client.run(user_token)
     
