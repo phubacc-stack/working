@@ -42,12 +42,10 @@ except Exception as e:
 
 all_subs_pool = nsfw_pool + hentai_pool
 
-# --- Reddit API ---
+# --- Reddit API setup ---
 reddit = praw.Reddit(
     client_id="lQ_-b50YbnuDiL_uC6B7OQ",
     client_secret="1GqXW2xEWOGjqMl2lNacWdOc4tt9YA",
-    username="phubacc-stack",
-    password="Mypassword123!",
     user_agent="NsfwDiscordBot/1.0"
 )
 
@@ -279,3 +277,4 @@ def keep_alive():
 keep_alive()
 client.run(user_token)
     
+
