@@ -20,7 +20,7 @@ pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.4-auto-pool-fullwalk'
+version = 'v5.5-auto-pool-fullwalk'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -95,7 +95,7 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                 continue
             url = str(post.url)
 
-            # Handle Reddit galleries with sorting
+            # Handle Reddit galleries
             if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                 gallery_urls = []
                 sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])  
@@ -108,13 +108,11 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                     posts.append(gallery_urls)
                 continue
 
-            # Ignore Imgur albums/galleries
             if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
                 continue
             if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
                 url += ".jpg"
 
-            # Filter by content type
             if (
                 (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
                 or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
@@ -144,6 +142,7 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
 # --- Auto system ---
 auto_tasks = {}
 skip_flags = {}
+pause_flags = {}
 
 async def safe_send(channel, url):
     try:
@@ -200,20 +199,23 @@ async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "im
         return
 
     skip_flags[ctx.channel.id] = False
+    pause_flags[ctx.channel.id] = False
 
     async def auto_loop(channel):
         while True:
             try:
-                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type=="random" else content_type
-                posts = get_filtered_posts(subreddit, ctype)
+                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
+                posts = get_filtered_posts(subreddit, ctype, batch_size=100)
                 if not posts:
                     await channel.send(f"❌ No posts found for r/{subreddit}.")
                     return
-                await channel.send(f"▶ Now playing from r/{subreddit}")
+                await channel.send(f"▶ Walking through full r/{subreddit}")
                 for post in posts:
                     if skip_flags[ctx.channel.id]:
                         skip_flags[ctx.channel.id] = False
                         break
+                    while pause_flags.get(ctx.channel.id, False):
+                        await asyncio.sleep(1)
                     await send_with_gallery_support(channel, post)
                     await asyncio.sleep(seconds)
             except asyncio.CancelledError:
@@ -243,28 +245,25 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
         return
 
     skip_flags[ctx.channel.id] = False
+    pause_flags[ctx.channel.id] = False
 
-    if pool_name=="nsfw":
-        pool = nsfw_pool
-    elif pool_name=="hentai":
-        pool = hentai_pool
-    else:
-        pool = nsfw_pool + hentai_pool
+    pool = nsfw_pool if pool_name == "nsfw" else hentai_pool if pool_name == "hentai" else nsfw_pool + hentai_pool
 
     async def auto_loop(channel):
         while True:
             try:
-                # pick a fresh random sub each cycle
                 sub = pyrandom.choice(pool)
-                ctype = pyrandom.choice(["img","gif","vid"]) if content_type=="random" else content_type
-                posts = get_filtered_posts(sub, ctype)
+                ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
+                posts = get_filtered_posts(sub, ctype, batch_size=100)
                 if not posts:
                     continue
-                await channel.send(f"▶ Now playing from r/{sub}")
+                await channel.send(f"▶ Walking through full r/{sub}")
                 for post in posts:
                     if skip_flags[ctx.channel.id]:
                         skip_flags[ctx.channel.id] = False
                         break
+                    while pause_flags.get(ctx.channel.id, False):
+                        await asyncio.sleep(1)
                     await send_with_gallery_support(channel, post)
                     await asyncio.sleep(seconds)
             except asyncio.CancelledError:
@@ -276,6 +275,16 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
     await ctx.send(f"▶️ Auto started for {pool_name} pool every {seconds}s for {content_type}.")
+
+@client.command()
+async def pause(ctx):
+    pause_flags[ctx.channel.id] = True
+    await ctx.send("⏸️ Auto paused.")
+
+@client.command()
+async def resume(ctx):
+    pause_flags[ctx.channel.id] = False
+    await ctx.send("▶️ Auto resumed.")
 
 @client.command()
 async def skip(ctx):
@@ -319,3 +328,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+    
