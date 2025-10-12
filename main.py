@@ -20,7 +20,7 @@ pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.6-auto-pool-fullwalk-r34fix'
+version = 'v5.4-auto-pool-fullwalk-redgifs'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -87,6 +87,7 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
             try:
                 post = next(iterator)
             except StopIteration:
+                # Reset iterator when subreddit is exhausted
                 sub_iterators[f"{subreddit_name}:{fetch_method}"] = None
                 break
 
@@ -94,9 +95,10 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                 continue
             url = str(post.url)
 
+            # Handle Reddit galleries with sorting
             if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                 gallery_urls = []
-                sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])
+                sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])  
                 for _, item in sorted_items[:25]:
                     if "s" in item and "u" in item["s"]:
                         gallery_url = html.unescape(item["s"]["u"])
@@ -106,11 +108,13 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                     posts.append(gallery_urls)
                 continue
 
+            # Ignore Imgur albums/galleries
             if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
                 continue
             if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
                 url += ".jpg"
 
+            # Filter by content type
             if (
                 (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
                 or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
@@ -123,9 +127,7 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
             flat = []
             for p in posts:
                 if isinstance(p, list):
-                    flat.extend(p)
-                    for url in p:
-                        seen_posts.add(url)
+                    flat.append(p)
                 else:
                     flat.append(p)
                     seen_posts.add(p)
@@ -138,6 +140,33 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
 
     print(f"[Fetched] r/{subreddit_name} -> {len(posts)} posts")
     return posts
+
+# --- RedGifs API setup ---
+REDGIFS_API_URL = "https://api.redgifs.com/v2/gifs/search"
+
+def get_redgifs_posts(tags, limit=5):
+    params = {
+        "search": tags,
+        "limit": limit,
+        "order_by": "trending",
+    }
+
+    try:
+        response = requests.get(REDGIFS_API_URL, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        posts = []
+        for post in data.get('gifs', []):
+            video_url = post.get("webm") or post.get("mp4")
+            if video_url:
+                posts.append(video_url)
+            else:
+                posts.append(post.get("url"))
+        return posts
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching RedGifs: {e}")
+        return []
 
 # --- Auto system ---
 auto_tasks = {}
@@ -160,7 +189,7 @@ async def send_with_gallery_support(channel, item):
         await safe_send(channel, item)
         post_counter += 1
 
-# --- Reddit Commands ---
+# --- Commands ---
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
     if amount > 50:
@@ -185,182 +214,22 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
         await ctx.send("❌ No posts found.")
 
 @client.command()
-async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "img"):
-    global auto_tasks
-    if seconds < 2:
-        await ctx.send("⚠️ Minimum 2 seconds.")
-        return
-    if content_type not in ["img", "gif", "vid", "random"]:
-        await ctx.send("⚠️ Type must be img | gif | vid | random.")
-        return
-    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        await ctx.send("⚠️ Auto already running here.")
+async def redgifs(ctx, tags: str = "random", amount: int = 3):
+    if amount > 10:
+        amount = 10
+
+    posts = get_redgifs_posts(tags, limit=amount)
+    
+    if not posts:
+        await ctx.send(f"❌ No RedGifs found for `{tags}`.")
         return
 
-    skip_flags[ctx.channel.id] = False
-
-    async def auto_loop(channel):
-        ctype = content_type
-        if content_type == "random":
-            ctype = pyrandom.choice(["img", "gif", "vid"])
-
-        await channel.send(f"▶ Now playing from r/{subreddit}")
-
-        while True:
-            try:
-                posts = get_filtered_posts(subreddit, ctype, batch_size=50)
-                if not posts:
-                    await asyncio.sleep(seconds)
-                    continue
-
-                for post in posts:
-                    if skip_flags[ctx.channel.id]:
-                        skip_flags[ctx.channel.id] = False
-                        break
-                    await send_with_gallery_support(channel, post)
-                    await asyncio.sleep(seconds)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[AutoSub Error] {e}")
-                await asyncio.sleep(seconds)
-
-    task = asyncio.create_task(auto_loop(ctx.channel))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ AutoSub started for r/{subreddit} every {seconds}s for {content_type}.")
+    for post in posts:
+        await send_with_gallery_support(ctx.channel, post)
+        await asyncio.sleep(1) 
 
 @client.command()
-async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str = "img"):
-    global auto_tasks
-    if seconds < 2:
-        await ctx.send("⚠️ Minimum 2 seconds.")
-        return
-    if pool_name not in ["nsfw", "hentai", "both"]:
-        await ctx.send("⚠️ Pool must be nsfw | hentai | both.")
-        return
-    if content_type not in ["img", "gif", "vid", "random"]:
-        await ctx.send("⚠️ Type must be img | gif | vid | random.")
-        return
-    if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
-        await ctx.send("⚠️ Auto already running here.")
-        return
-
-    skip_flags[ctx.channel.id] = False
-
-    if pool_name=="nsfw":
-        pool = nsfw_pool
-    elif pool_name=="hentai":
-        pool = hentai_pool
-    else:
-        pool = nsfw_pool + hentai_pool
-
-    async def auto_loop(channel):
-        shuffled_pool = pool.copy()
-        pyrandom.shuffle(shuffled_pool)
-        sub_index = 0
-
-        while True:
-            try:
-                if sub_index >= len(shuffled_pool):
-                    sub_index = 0
-                    pyrandom.shuffle(shuffled_pool)
-
-                sub = shuffled_pool[sub_index]
-                ctype = pyrandom.choice(["img","gif","vid"]) if content_type=="random" else content_type
-
-                await channel.send(f"▶ Now playing from r/{sub}")
-
-                posts = get_filtered_posts(sub, ctype, batch_size=50)
-                if not posts:
-                    sub_index += 1
-                    continue
-
-                for post in posts:
-                    if skip_flags[ctx.channel.id]:
-                        skip_flags[ctx.channel.id] = False
-                        break
-                    await send_with_gallery_support(channel, post)
-                    await asyncio.sleep(seconds)
-
-                sub_index += 1
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[Auto Error] {e}")
-                await asyncio.sleep(seconds)
-
-    task = asyncio.create_task(auto_loop(ctx.channel))
-    auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto started for {pool_name} pool every {seconds}s for {content_type}.")
-
-@client.command()
-async def skip(ctx):
-    if ctx.channel.id in skip_flags:
-        skip_flags[ctx.channel.id] = True
-        await ctx.send("⏭ Skipping current subreddit...")
-
-@client.command()
-async def autostop(ctx):
-    if ctx.channel.id in auto_tasks:
-        auto_tasks[ctx.channel.id].cancel()
-        await ctx.send("⏹️ Auto stopped.")
-    else:
-        await ctx.send("⚠️ No auto running here.")
-
-@client.command()
-async def stats(ctx):
-    uptime = datetime.now(timezone.utc) - start_time
-    await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
-
-# --- Rule34 Commands (Fixed + Multi-image) ---
-@client.command()
-async def r34(ctx, *, tags: str):
-    tags = tags.replace(" ", "_")
-    urls = [
-        f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tags}",
-        f"https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tags}"
-    ]
-    headers = {"User-Agent": "Mozilla/5.0 (DiscordBot)"}
-
-    response_data = []
-    for url in urls:
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200:
-                try:
-                    response_data = r.json()
-                    if response_data:
-                        break
-                except Exception as je:
-                    print(f"[Rule34 JSON Error] {je}")
-        except Exception as e:
-            print(f"[Rule34 Fetch Error] {e}")
-
-    if not response_data:
-        await ctx.send(f"❌ No posts found for `{tags}`.")
-        return
-
-    # Normalize results
-    urls_to_send = []
-    for post in response_data:
-        if isinstance(post, dict) and "file_url" in post:
-            urls_to_send.append(post["file_url"])
-        elif isinstance(post, str) and post.startswith("http"):
-            urls_to_send.append(post)
-
-    if not urls_to_send:
-        await ctx.send(f"❌ No valid posts found for `{tags}`.")
-        return
-
-    batch = pyrandom.sample(urls_to_send, min(3, len(urls_to_send)))
-    for post_url in batch:
-        await send_with_gallery_support(ctx.channel, post_url)
-        await asyncio.sleep(1)
-
-@client.command()
-async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
+async def auto_redgifs(ctx, seconds: int = 5, tags_list: str = "random"):
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
         return
@@ -369,15 +238,13 @@ async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
         return
 
     skip_flags[ctx.channel.id] = False
-    tags_pool = [tag.strip().replace(" ", "_") for tag in tags_list.split(",") if tag.strip()]
+    tags_pool = [tag.strip() for tag in tags_list.split(",") if tag.strip()]
     if not tags_pool:
         await ctx.send("❌ No valid tags provided.")
         return
 
-    headers = {"User-Agent": "Mozilla/5.0 (DiscordBot)"}
-
     async def auto_loop(channel):
-        await channel.send(f"▶ Now auto posting Rule34 from {len(tags_pool)} tag sets")
+        await channel.send(f"▶️ Auto RedGifs started for {len(tags_pool)} tags every {seconds}s.")
         while True:
             try:
                 if skip_flags[ctx.channel.id]:
@@ -386,52 +253,43 @@ async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
                     continue
 
                 tag_query = pyrandom.choice(tags_pool)
-                urls = [
-                    f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}",
-                    f"https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}"
-                ]
-
-                response_data = []
-                for url in urls:
-                    try:
-                        r = requests.get(url, headers=headers, timeout=10)
-                        if r.status_code == 200:
-                            try:
-                                response_data = r.json()
-                                if response_data:
-                                    break
-                            except Exception as je:
-                                print(f"[Rule34 JSON Error] {je}")
-                    except Exception as e:
-                        print(f"[Rule34 Fetch Error] {e}")
-
-                # Normalize
-                urls_to_send = []
-                for post in response_data:
-                    if isinstance(post, dict) and "file_url" in post:
-                        urls_to_send.append(post["file_url"])
-                    elif isinstance(post, str) and post.startswith("http"):
-                        urls_to_send.append(post)
-
-                if urls_to_send:
-                    batch = pyrandom.sample(urls_to_send, min(3, len(urls_to_send)))
-                    for post_url in batch:
-                        await send_with_gallery_support(channel, post_url)
-                        await asyncio.sleep(1)
-                else:
-                    print(f"[Rule34] No posts found for: {tag_query}")
-
-                await asyncio.sleep(seconds)
-
+                posts = get_redgifs_posts(tag_query, limit=5)
+                
+                if not posts:
+                    await channel.send(f"❌ No RedGifs found for `{tag_query}`.")
+                    continue
+                
+                await channel.send(f"▶ Now playing RedGifs for `{tag_query}`")
+                for post in posts:
+                    await send_with_gallery_support(channel, post)
+                    await asyncio.sleep(seconds)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"[Auto_R34 Error] {e}")
+                print(f"[Auto RedGifs Error] {e}")
                 await asyncio.sleep(seconds)
 
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ Auto_R34 started for {len(tags_pool)} tag sets every {seconds}s.")
+
+@client.command()
+async def skip(ctx):
+    if ctx.channel.id in skip_flags:
+        skip_flags[ctx.channel.id] = True
+        await ctx.send("⏭ Skipping current tag...")
+
+@client.command()
+async def autostop(ctx):
+    if ctx.channel.id in auto_tasks:
+        auto_tasks[ctx.channel.id].cancel()
+        await ctx.send("⏹️ Auto RedGifs stopped.")
+    else:
+        await ctx.send("⚠️ No auto running here.")
+
+@client.command()
+async def stats(ctx):
+    uptime = datetime.now(timezone.utc) - start_time
+    await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
 # --- Keepalive Pin ---
 app = Flask("")
