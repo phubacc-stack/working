@@ -20,7 +20,7 @@ pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.5-auto-pool-fullwalk-r34fix'
+version = 'v5.6-auto-pool-fullwalk-r34fix'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -330,13 +330,9 @@ async def r34(ctx, *, tags: str):
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 200:
                 try:
-                    data = r.json()
-                    if isinstance(data, list):
-                        urls_list = [item.get("file_url") if isinstance(item, dict) else str(item) for item in data]
-                        urls_list = [u for u in urls_list if u]
-                        if urls_list:
-                            response_data = urls_list
-                            break
+                    response_data = r.json()
+                    if response_data:
+                        break
                 except Exception as je:
                     print(f"[Rule34 JSON Error] {je}")
         except Exception as e:
@@ -346,19 +342,27 @@ async def r34(ctx, *, tags: str):
         await ctx.send(f"❌ No posts found for `{tags}`.")
         return
 
-    batch = pyrandom.sample(response_data, min(3, len(response_data)))
+    # Normalize results
+    urls_to_send = []
+    for post in response_data:
+        if isinstance(post, dict) and "file_url" in post:
+            urls_to_send.append(post["file_url"])
+        elif isinstance(post, str) and post.startswith("http"):
+            urls_to_send.append(post)
+
+    if not urls_to_send:
+        await ctx.send(f"❌ No valid posts found for `{tags}`.")
+        return
+
+    batch = pyrandom.sample(urls_to_send, min(3, len(urls_to_send)))
     for post_url in batch:
         await send_with_gallery_support(ctx.channel, post_url)
         await asyncio.sleep(1)
-
 
 @client.command()
 async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
-        return
-    if not tags_list.strip():
-        await ctx.send("❌ You must provide at least one tag.")
         return
     if ctx.channel.id in auto_tasks and not auto_tasks[ctx.channel.id].done():
         await ctx.send("⚠️ Auto already running here.")
@@ -393,20 +397,24 @@ async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
                         r = requests.get(url, headers=headers, timeout=10)
                         if r.status_code == 200:
                             try:
-                                data = r.json()
-                                if isinstance(data, list):
-                                    urls_list = [item.get("file_url") if isinstance(item, dict) else str(item) for item in data]
-                                    urls_list = [u for u in urls_list if u]
-                                    if urls_list:
-                                        response_data = urls_list
-                                        break
+                                response_data = r.json()
+                                if response_data:
+                                    break
                             except Exception as je:
                                 print(f"[Rule34 JSON Error] {je}")
                     except Exception as e:
                         print(f"[Rule34 Fetch Error] {e}")
 
-                if response_data:
-                    batch = pyrandom.sample(response_data, min(3, len(response_data)))
+                # Normalize
+                urls_to_send = []
+                for post in response_data:
+                    if isinstance(post, dict) and "file_url" in post:
+                        urls_to_send.append(post["file_url"])
+                    elif isinstance(post, str) and post.startswith("http"):
+                        urls_to_send.append(post)
+
+                if urls_to_send:
+                    batch = pyrandom.sample(urls_to_send, min(3, len(urls_to_send)))
                     for post_url in batch:
                         await send_with_gallery_support(channel, post_url)
                         await asyncio.sleep(1)
@@ -448,4 +456,3 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-        
