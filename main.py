@@ -20,7 +20,7 @@ pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.4-auto-pool-fullwalk'
+version = 'v5.5-auto-pool-fullwalk-r34fix'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -314,33 +314,44 @@ async def stats(ctx):
     uptime = datetime.now(timezone.utc) - start_time
     await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
-# --- Rule34 Commands ---
+# --- Rule34 Commands (Fixed + Multi-image) ---
 @client.command()
 async def r34(ctx, *, tags: str):
     tags = tags.replace(" ", "_")
-    url = f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tags}"
+    urls = [
+        f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tags}",
+        f"https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tags}"
+    ]
+    headers = {"User-Agent": "Mozilla/5.0 (DiscordBot)"}
 
-    try:
-        response = requests.get(url).json()
-        if not response:
-            await ctx.send("❌ No posts found for those tags.")
-            return
+    response_data = []
+    for url in urls:
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                try:
+                    response_data = r.json()
+                    if response_data:
+                        break
+                except Exception as je:
+                    print(f"[Rule34 JSON Error] {je}")
+        except Exception as e:
+            print(f"[Rule34 Fetch Error] {e}")
 
-        post = pyrandom.choice(response)
+    if not response_data:
+        await ctx.send(f"❌ No posts found for `{tags}`.")
+        return
+
+    batch = pyrandom.sample(response_data, min(3, len(response_data)))
+    for post in batch:
         post_url = post.get("file_url")
         if post_url:
             await send_with_gallery_support(ctx.channel, post_url)
-        else:
-            await ctx.send("❌ No file found in this post.")
-    except Exception as e:
-        await ctx.send(f"❌ Error fetching Rule34 post: {e}")
+        await asyncio.sleep(1)
+
 
 @client.command()
 async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
-    """
-    Auto-post Rule34 images for a list of tags continuously.
-    Usage: !auto_r34 5 tag1, tag2, tag3
-    """
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
         return
@@ -349,10 +360,12 @@ async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
         return
 
     skip_flags[ctx.channel.id] = False
-    tags_pool = [tag.strip() for tag in tags_list.split(",") if tag.strip()]
+    tags_pool = [tag.strip().replace(" ", "_") for tag in tags_list.split(",") if tag.strip()]
     if not tags_pool:
         await ctx.send("❌ No valid tags provided.")
         return
+
+    headers = {"User-Agent": "Mozilla/5.0 (DiscordBot)"}
 
     async def auto_loop(channel):
         await channel.send(f"▶ Now auto posting Rule34 from {len(tags_pool)} tag sets")
@@ -363,14 +376,35 @@ async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
                     await asyncio.sleep(seconds)
                     continue
 
-                tag_query = pyrandom.choice(tags_pool).replace(" ", "_")
-                url = f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}"
-                response = requests.get(url).json()
-                if response:
-                    post = pyrandom.choice(response)
-                    post_url = post.get("file_url")
-                    if post_url:
-                        await send_with_gallery_support(channel, post_url)
+                tag_query = pyrandom.choice(tags_pool)
+                urls = [
+                    f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}",
+                    f"https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}"
+                ]
+
+                response_data = []
+                for url in urls:
+                    try:
+                        r = requests.get(url, headers=headers, timeout=10)
+                        if r.status_code == 200:
+                            try:
+                                response_data = r.json()
+                                if response_data:
+                                    break
+                            except Exception as je:
+                                print(f"[Rule34 JSON Error] {je}")
+                    except Exception as e:
+                        print(f"[Rule34 Fetch Error] {e}")
+
+                if response_data:
+                    batch = pyrandom.sample(response_data, min(3, len(response_data)))
+                    for post in batch:
+                        post_url = post.get("file_url")
+                        if post_url:
+                            await send_with_gallery_support(channel, post_url)
+                            await asyncio.sleep(1)
+                else:
+                    print(f"[Rule34] No posts found for: {tag_query}")
 
                 await asyncio.sleep(seconds)
 
@@ -407,3 +441,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
+                   
