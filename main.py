@@ -20,9 +20,10 @@ pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.5-auto-pool-fullwalk-r34fix'
+version = 'v5.6-auto-pool-fullwalk-r34fix'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
+r34_post_counter = 0
 seen_posts = set()
 
 # --- Discord Environment Variables ---
@@ -312,31 +313,45 @@ async def autostop(ctx):
 @client.command()
 async def stats(ctx):
     uptime = datetime.now(timezone.utc) - start_time
-    await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
+    await ctx.send(f"📊 Posts sent: {post_counter}\n📈 Rule34 posts: {r34_post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
-# --- Rule34 Commands (Fixed + Multi-image) ---
-@client.command()
-async def r34(ctx, *, tags: str):
-    tags = tags.replace(" ", "_")
-    urls = [
-        f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tags}",
-        f"https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tags}"
-    ]
+# --- Rule34 Commands (Fixed + Multi-image + Random tags + Status) ---
+
+# Default tag list used when no tags are provided to auto_r34
+DEFAULT_R34_TAGS = [
+    "boobs", "ass", "anal", "blowjob", "thighs", "futa", "cumshot", "cowgirl",
+    "hentai", "pov", "milf", "schoolgirl", "ahegao", "big_tits", "doggystyle", "pokemon"
+]
+
+def fetch_rule34_data(tag_query):
     headers = {"User-Agent": "Mozilla/5.0 (DiscordBot)"}
-
-    response_data = []
+    urls = [
+        f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}",
+        f"https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}"
+    ]
     for url in urls:
         try:
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 200:
                 try:
-                    response_data = r.json()
-                    if response_data:
-                        break
+                    data = r.json()
+                    if data:
+                        return data
                 except Exception as je:
                     print(f"[Rule34 JSON Error] {je}")
         except Exception as e:
             print(f"[Rule34 Fetch Error] {e}")
+    return []
+
+@client.command()
+async def r34(ctx, *, tags: str):
+    """
+    Keep this command requiring tags (same format you used).
+    It now tolerates the API returning strings or dicts.
+    """
+    global r34_post_counter
+    tags = tags.replace(" ", "_")
+    response_data = fetch_rule34_data(tags)
 
     if not response_data:
         await ctx.send(f"❌ No posts found for `{tags}`.")
@@ -344,14 +359,25 @@ async def r34(ctx, *, tags: str):
 
     batch = pyrandom.sample(response_data, min(3, len(response_data)))
     for post in batch:
-        post_url = post.get("file_url")
+        # post may be a dict or a string URL
+        post_url = None
+        if isinstance(post, dict):
+            post_url = post.get("file_url") or post.get("source") or post.get("preview_url")
+        elif isinstance(post, str):
+            post_url = post
         if post_url:
             await send_with_gallery_support(ctx.channel, post_url)
+            r34_post_counter += 1
         await asyncio.sleep(1)
 
-
 @client.command()
-async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
+async def auto_r34(ctx, seconds: int = 5, *, tags_list: str = ""):
+    """
+    auto_r34 supports:
+      - !auto_r34 5              -> uses DEFAULT_R34_TAGS
+      - !auto_r34 5 boobs,anal   -> uses provided tags
+    """
+    global auto_tasks, r34_post_counter
     if seconds < 2:
         await ctx.send("⚠️ Minimum 2 seconds.")
         return
@@ -360,59 +386,67 @@ async def auto_r34(ctx, seconds: int = 5, *, tags_list: str):
         return
 
     skip_flags[ctx.channel.id] = False
-    tags_pool = [tag.strip().replace(" ", "_") for tag in tags_list.split(",") if tag.strip()]
-    if not tags_pool:
-        await ctx.send("❌ No valid tags provided.")
-        return
+
+    if tags_list and tags_list.strip():
+        tags_pool = [tag.strip().replace(" ", "_") for tag in tags_list.split(",") if tag.strip()]
+    else:
+        tags_pool = DEFAULT_R34_TAGS.copy()
 
     headers = {"User-Agent": "Mozilla/5.0 (DiscordBot)"}
 
     async def auto_loop(channel):
         await channel.send(f"▶ Now auto posting Rule34 from {len(tags_pool)} tag sets")
-        while True:
-            try:
-                if skip_flags[ctx.channel.id]:
-                    skip_flags[ctx.channel.id] = False
-                    await asyncio.sleep(seconds)
-                    continue
+        total_sent_in_session = 0
+        try:
+            while True:
+                try:
+                    if skip_flags.get(ctx.channel.id):
+                        # clear skip and continue to next loop
+                        skip_flags[ctx.channel.id] = False
+                        await asyncio.sleep(seconds)
+                        continue
 
-                tag_query = pyrandom.choice(tags_pool)
-                urls = [
-                    f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}",
-                    f"https://rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&tags={tag_query}"
-                ]
+                    tag_query = pyrandom.choice(tags_pool)
+                    response_data = fetch_rule34_data(tag_query)
 
-                response_data = []
-                for url in urls:
-                    try:
-                        r = requests.get(url, headers=headers, timeout=10)
-                        if r.status_code == 200:
-                            try:
-                                response_data = r.json()
-                                if response_data:
-                                    break
-                            except Exception as je:
-                                print(f"[Rule34 JSON Error] {je}")
-                    except Exception as e:
-                        print(f"[Rule34 Fetch Error] {e}")
-
-                if response_data:
-                    batch = pyrandom.sample(response_data, min(3, len(response_data)))
-                    for post in batch:
-                        post_url = post.get("file_url")
-                        if post_url:
-                            await send_with_gallery_support(channel, post_url)
+                    if response_data:
+                        batch = pyrandom.sample(response_data, min(3, len(response_data)))
+                        sent_this_batch = 0
+                        # send a small status header for this tag (so users know what's being posted)
+                        await channel.send(f"▶ Posting `{tag_query}` — {len(response_data)} results available")
+                        for post in batch:
+                            if skip_flags.get(ctx.channel.id):
+                                skip_flags[ctx.channel.id] = False
+                                break
+                            post_url = None
+                            if isinstance(post, dict):
+                                post_url = post.get("file_url") or post.get("source") or post.get("preview_url")
+                            elif isinstance(post, str):
+                                post_url = post
+                            if post_url:
+                                await send_with_gallery_support(channel, post_url)
+                                r34_post_counter += 1
+                                sent_this_batch += 1
+                                total_sent_in_session += 1
                             await asyncio.sleep(1)
-                else:
-                    print(f"[Rule34] No posts found for: {tag_query}")
-
-                await asyncio.sleep(seconds)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[Auto_R34 Error] {e}")
-                await asyncio.sleep(seconds)
+                        # status after each batch
+                        await channel.send(f"✅ `{tag_query}` batch complete — posted {sent_this_batch} items (session total: {total_sent_in_session})")
+                    else:
+                        # no data found for this tag
+                        await channel.send(f"❌ No posts found for `{tag_query}`")
+                    # short delay before next tag
+                    await asyncio.sleep(seconds)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    print(f"[Auto_R34 Error] {e}")
+                    await asyncio.sleep(seconds)
+        finally:
+            # when loop ends (cancelled), let channel know
+            try:
+                await channel.send("⏹️ Auto_R34 stopped.")
+            except:
+                pass
 
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
@@ -441,4 +475,4 @@ threading.Thread(target=ping, daemon=True).start()
 
 # --- Run Bot ---
 client.run(user_token)
-                   
+    
