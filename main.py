@@ -20,7 +20,7 @@ pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
 # --- Suppress async warning ---
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.4-auto-pool-fullwalk'
+version = 'v5.4-auto-pool-fullwalk+newNSFW'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -54,7 +54,9 @@ reddit = praw.Reddit(
 
 client = commands.Bot(command_prefix="!")
 
-# --- Helper: Fuzzy subreddit correction ---
+# --------------------------
+# Reddit Helpers (unchanged)
+# --------------------------
 def correct_subreddit(subreddit_name):
     match, score, _ = process.extractOne(subreddit_name, all_subs_pool, scorer=fuzz.ratio)
     if score >= 70:
@@ -62,7 +64,6 @@ def correct_subreddit(subreddit_name):
         return match
     return subreddit_name
 
-# --- Iterator cache to walk through subs fully ---
 sub_iterators = {}
 
 def get_subreddit_iterator(subreddit_name, fetch_method):
@@ -73,7 +74,6 @@ def get_subreddit_iterator(subreddit_name, fetch_method):
         sub_iterators[key] = iter(listings)
     return sub_iterators[key]
 
-# --- Helper: Get unique posts (walk through subreddit) ---
 def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_size=25):
     global seen_posts
     posts = []
@@ -87,7 +87,6 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
             try:
                 post = next(iterator)
             except StopIteration:
-                # Reset iterator when subreddit is exhausted
                 sub_iterators[f"{subreddit_name}:{fetch_method}"] = None
                 break
 
@@ -95,7 +94,6 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                 continue
             url = str(post.url)
 
-            # Handle Reddit galleries with sorting
             if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
                 gallery_urls = []
                 sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])  
@@ -108,13 +106,11 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                     posts.append(gallery_urls)
                 continue
 
-            # Ignore Imgur albums/galleries
             if "imgur.com/a/" in url or "imgur.com/gallery/" in url:
                 continue
             if "imgur.com" in url and not url.endswith((".jpg", ".png", ".gif")):
                 url += ".jpg"
 
-            # Filter by content type
             if (
                 (content_type == "img" and (url.endswith((".jpg", ".jpeg", ".png")) or "i.redd.it" in url))
                 or (content_type == "gif" and (url.endswith(".gif") or "gfycat" in url or "redgifs" in url or url.endswith(".gifv")))
@@ -123,7 +119,6 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                 if url not in seen_posts:
                     posts.append(url)
 
-        # Flatten and mark seen
         if posts:
             flat = []
             for p in posts:
@@ -144,7 +139,9 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
     print(f"[Fetched] r/{subreddit_name} -> {len(posts)} posts")
     return posts
 
-# --- Auto system ---
+# --------------------------
+# Auto system for Reddit
+# --------------------------
 auto_tasks = {}
 skip_flags = {}
 
@@ -165,7 +162,9 @@ async def send_with_gallery_support(channel, item):
         await safe_send(channel, item)
         post_counter += 1
 
-# --- Commands ---
+# --------------------------
+# Reddit Commands
+# --------------------------
 @client.command()
 async def r(ctx, amount: int = 1, content_type: str = "img"):
     if amount > 50:
@@ -208,7 +207,6 @@ async def autosub(ctx, subreddit: str, seconds: int = 5, content_type: str = "im
         ctype = content_type
         if content_type == "random":
             ctype = pyrandom.choice(["img", "gif", "vid"])
-
         await channel.send(f"▶ Now playing from r/{subreddit}")
 
         while True:
@@ -319,7 +317,124 @@ async def stats(ctx):
     uptime = datetime.now(timezone.utc) - start_time
     await ctx.send(f"📊 Posts sent: {post_counter}\n⏱️ Uptime: {uptime}\n⚙️ Version: {version}")
 
-# --- Keepalive Pin ---
+# --------------------------
+# New NSFW Sources Helpers
+# --------------------------
+async def fetch_rule34(tag=""):
+    try:
+        url = f"https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&limit=100&tags={tag}"
+        r = requests.get(url, timeout=10).json()
+        if not r:
+            return []
+        return [p["file_url"] for p in r if "file_url" in p]
+    except:
+        return []
+
+async def fetch_e621(tag=""):
+    try:
+        url = f"https://e621.net/posts.json?limit=100&tags={tag}"
+        headers = {"User-Agent": "DiscordNSFWBot/1.0"}
+        r = requests.get(url, headers=headers, timeout=10).json()
+        posts = r.get("posts", [])
+        return [p["file"]["url"] for p in posts if "file" in p and "url" in p["file"]]
+    except:
+        return []
+
+async def fetch_coomer(tag=""):
+    try:
+        url = f"https://api.coomer.party/gallery/random?tags={tag}"
+        r = requests.get(url, timeout=10).json()
+        return [p["file_url"] for p in r]
+    except:
+        return []
+
+async def fetch_kemono(tag=""):
+    try:
+        url = f"https://kemono.party/api/v1/posts?search={tag}"
+        r = requests.get(url, timeout=10).json()
+        return [p["url"] for p in r.get("data", [])]
+    except:
+        return []
+
+# --------------------------
+# New NSFW Commands
+# --------------------------
+async def send_source_posts(ctx, source_name, fetch_func, tag=""):
+    posts = await fetch_func(tag)
+    if not posts:
+        await ctx.send(f"❌ No posts found on {source_name} for `{tag}`")
+        return
+    await ctx.send(f"▶ Source: {source_name}")
+    for url in posts[:10]:
+        await send_with_gallery_support(ctx.channel, url)
+
+@client.command()
+async def rule34(ctx, *, tag=""):
+    await send_source_posts(ctx, "Rule34", fetch_rule34, tag)
+
+@client.command()
+async def e621(ctx, *, tag=""):
+    await send_source_posts(ctx, "e621", fetch_e621, tag)
+
+@client.command()
+async def coomer(ctx, *, tag=""):
+    await send_source_posts(ctx, "Coomer", fetch_coomer, tag)
+
+@client.command()
+async def kemono(ctx, *, tag=""):
+    await send_source_posts(ctx, "Kemono", fetch_kemono, tag)
+
+# --------------------------
+# New NSFW Auto (Randomized from all 4 sources)
+# --------------------------
+new_auto_tasks = {}
+new_skip_flags = {}
+
+@client.command()
+async def auto_new(ctx, seconds: int = 5, tag: str = ""):
+    if seconds < 2:
+        await ctx.send("⚠️ Minimum 2 seconds.")
+        return
+    if ctx.channel.id in new_auto_tasks and not new_auto_tasks[ctx.channel.id].done():
+        await ctx.send("⚠️ Auto already running here.")
+        return
+
+    new_skip_flags[ctx.channel.id] = False
+    sources = [
+        ("Rule34", fetch_rule34),
+        ("e621", fetch_e621),
+        ("Coomer", fetch_coomer),
+        ("Kemono", fetch_kemono)
+    ]
+
+    async def auto_loop(channel):
+        while True:
+            try:
+                source_name, fetch_func = pyrandom.choice(sources)
+                posts = await fetch_func(tag)
+                if not posts:
+                    await asyncio.sleep(seconds)
+                    continue
+                await channel.send(f"▶ Source: {source_name}")
+                for url in posts[:10]:
+                    if new_skip_flags[ctx.channel.id]:
+                        new_skip_flags[ctx.channel.id] = False
+                        break
+                    await send_with_gallery_support(channel, url)
+                    await asyncio.sleep(seconds)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[New Auto Error] {e}")
+                await asyncio.sleep(seconds)
+
+    task = asyncio.create_task(auto_loop(ctx.channel))
+    new_auto_tasks[ctx.channel.id] = task
+    await ctx.send(f"▶️ Auto_new started pulling from all sources every {seconds}s.")
+
+# --------------------------
+# Keepalive Pin
+# --------------------------
 app = Flask("")
 
 @app.route("/")
@@ -340,6 +455,7 @@ def ping():
 threading.Thread(target=run).start()
 threading.Thread(target=ping, daemon=True).start()
 
-# --- Run Bot ---
+# --------------------------
+# Run Bot
+# --------------------------
 client.run(user_token)
-            
