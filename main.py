@@ -18,7 +18,7 @@ from rapidfuzz import process, fuzz
 pyrandom.seed(os.getpid() ^ int(time.time() * 1000000))
 os.environ["PRAW_NO_ASYNC_WARNING"] = "1"
 
-version = 'v5.5-auto-pool-fullwalk-pause'
+version = 'v5.6-auto-pool-fullwalk-pause-galleryfix'
 start_time = datetime.now(timezone.utc)
 post_counter = 0
 seen_posts = set()
@@ -92,15 +92,17 @@ def get_filtered_posts(subreddit_name, content_type, fetch_method=None, batch_si
                 continue
             url = str(post.url)
 
-            # Handle galleries
-            if "reddit.com/gallery" in url and hasattr(post, "media_metadata"):
+            # --- FIXED: Proper gallery order ---
+            if "reddit.com/gallery" in url and hasattr(post, "gallery_data") and hasattr(post, "media_metadata"):
                 gallery_urls = []
-                sorted_items = sorted(post.media_metadata.items(), key=lambda x: x[1]["s"]["u"])  
-                for _, item in sorted_items[:25]:
-                    if "s" in item and "u" in item["s"]:
-                        gallery_url = html.unescape(item["s"]["u"])
-                        if gallery_url not in seen_posts:
-                            gallery_urls.append(gallery_url)
+                for item in post.gallery_data["items"]:
+                    media_id = item["media_id"]
+                    if media_id in post.media_metadata:
+                        media_info = post.media_metadata[media_id]
+                        if "s" in media_info and "u" in media_info["s"]:
+                            gallery_url = html.unescape(media_info["s"]["u"])
+                            if gallery_url not in seen_posts:
+                                gallery_urls.append(gallery_url)
                 if gallery_urls:
                     posts.append(gallery_urls)
                 continue
@@ -184,7 +186,7 @@ async def r(ctx, amount: int = 1, content_type: str = "img"):
     else:
         await ctx.send("❌ No posts found.")
 
-# --- NEW: AutoSub supports 2 subs ---
+# --- FIXED: AutoSub works with 1 or 2 subs ---
 @client.command()
 async def autosub(ctx, sub1: str, sub2: str = None, seconds: int = 5, content_type: str = "img"):
     global auto_tasks
@@ -202,7 +204,7 @@ async def autosub(ctx, sub1: str, sub2: str = None, seconds: int = 5, content_ty
     pause_flags[ctx.channel.id] = False
 
     async def auto_loop(channel):
-        subs = [sub1] if not sub2 else [sub1, sub2]
+        subs = [sub1] if sub2 is None else [sub1, sub2]
         while True:
             for s in subs:
                 ctype = pyrandom.choice(["img", "gif", "vid"]) if content_type == "random" else content_type
@@ -212,7 +214,7 @@ async def autosub(ctx, sub1: str, sub2: str = None, seconds: int = 5, content_ty
                     continue
                 await channel.send(f"▶ Now playing from r/{s}")
                 for post in posts:
-                    if skip_flags[ctx.channel.id]:
+                    if skip_flags.get(ctx.channel.id):
                         skip_flags[ctx.channel.id] = False
                         break
                     while pause_flags.get(ctx.channel.id, False):
@@ -222,9 +224,9 @@ async def autosub(ctx, sub1: str, sub2: str = None, seconds: int = 5, content_ty
 
     task = asyncio.create_task(auto_loop(ctx.channel))
     auto_tasks[ctx.channel.id] = task
-    await ctx.send(f"▶️ AutoSub started for {sub1}" + (f" + {sub2}" if sub2 else "") + f" every {seconds}s.")
+    await ctx.send(f"▶️ AutoSub started for r/{sub1}" + (f" + r/{sub2}" if sub2 else "") + f" every {seconds}s.")
 
-# --- Updated !auto (full walk each sub before switch) ---
+# --- Auto full walk ---
 @client.command()
 async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str = "img"):
     global auto_tasks
@@ -255,7 +257,7 @@ async def auto(ctx, seconds: int = 5, pool_name: str = "both", content_type: str
                 continue
             await channel.send(f"▶ Now walking full r/{sub}")
             for post in posts:
-                if skip_flags[ctx.channel.id]:
+                if skip_flags.get(ctx.channel.id):
                     skip_flags[ctx.channel.id] = False
                     break
                 while pause_flags.get(ctx.channel.id, False):
@@ -323,3 +325,4 @@ threading.Thread(target=run).start()
 threading.Thread(target=ping, daemon=True).start()
 
 client.run(user_token)
+    
